@@ -3,8 +3,8 @@
  * @file index.php
  * @description 用户中心仪表盘，上传管理图片、修改密码、查看统计
  * @author AI
- * @version 1.1.0-dev
- * @date 2026-08-04
+ * @version 1.3.6
+ * @date 2026-08-05
  */
 declare(strict_types=1);
 
@@ -32,7 +32,6 @@ $apiConfig = array(
     'chevereto'=>array('name'=>'PlcGO图床', 'max_size'=>10),
     'zhongzhuan'=>array('name'=>'凌云图床', 'max_size'=>10),
     'phototourl'=>array('name'=>'PHOTO图床', 'max_size'=>10),
-    'img520'=>array('name'=>'IMG520图床', 'max_size'=>10),
     'imgloc'=>array('name'=>'IMGLOC图床', 'max_size'=>10),
     'locimg'=>array('name'=>'LOC图床', 'max_size'=>10),
     'jisu'=>array('name'=>'极速图床', 'max_size'=>3),
@@ -113,6 +112,8 @@ $siteNotice  = !empty($conf['jieshao']) ? $conf['jieshao'] : '';
 $siteNoticeHash = $siteNotice !== '' ? md5($siteNotice) : '';
 // 警告固定横幅内容
 $siteWarning = !empty($conf['Copyright']) ? $conf['Copyright'] : '';
+$siteEmail   = isset($conf['email']) && $conf['email'] !== '' ? $conf['email']
+             : (isset($conf['picui_email']) ? $conf['picui_email'] : '');
 $csrfToken   = csrf_token();
 $username    = isset($currentUser['username']) ? $currentUser['username'] : '用户';
 $userAvatar  = !empty($currentUser['avatar']) ? $currentUser['avatar'] : '';
@@ -443,6 +444,16 @@ if(!$isSuperAdmin) {
     .footer{margin-top:32px;padding:24px;text-align:center;color:var(--muted);font-size:0.84rem;border-top:1px solid var(--line)}
     .footer a{color:var(--primary);text-decoration:none}
     .footer a:hover{text-decoration:underline}
+
+    /* 套餐购买 AJAX 加载区域 */
+    .pricing-section-wrap{padding:20px 0}
+    .pricing-loading,.pricing-error{text-align:center;padding:60px 20px;color:var(--muted)}
+    .pricing-loading i,.pricing-error i{font-size:36px;display:block;margin-bottom:12px}
+    .pricing-loading i{color:var(--primary)}
+    .pricing-error i{color:var(--danger)}
+    .pricing-error p{margin:8px 0 16px;font-size:0.92rem}
+    .pricing-content{animation:pricing-fade-in .3s ease}
+    @keyframes pricing-fade-in{from{opacity:0}to{opacity:1}}
   </style>
 </head>
 <body>
@@ -477,12 +488,10 @@ if(!$isSuperAdmin) {
       </div>
 
       <nav class="side-nav">
-        <a class="active" href="#stats-section"><i class="mdi mdi-chart-bar"></i> 数据统计</a>
-        <a href="#package-section"><i class="mdi mdi-crown-outline"></i> 套餐中心</a>
-        <a href="#upload-section"><i class="mdi mdi-cloud-upload-outline"></i> 上传图片</a>
+        <a class="active" href="#home-section"><i class="mdi mdi-home-outline"></i> 首页</a>
         <a href="#gallery-section"><i class="mdi mdi-image-multiple-outline"></i> 我的图片</a>
+        <a href="#pricing-section"><i class="mdi mdi-package-variant"></i> 套餐中心</a>
         <a href="#apikeys-section"><i class="mdi mdi-key-variant"></i> API 密钥</a>
-        <a href="#" id="navChangePwd"><i class="mdi mdi-lock-reset"></i> 修改密码</a>
         <?php if($isSuperAdmin): ?>
         <a href="../admin/index.php"><i class="mdi mdi-shield-account-outline"></i> 管理后台</a>
         <a href="../admin/upimg.php"><i class="mdi mdi-image-edit-outline"></i> 图片管理</a>
@@ -505,6 +514,17 @@ if(!$isSuperAdmin) {
         <span>防盗链</span>
         <span>WebP</span>
       </div>
+
+      <?php if(!empty($siteEmail)): ?>
+      <div class="contact-card soft-card">
+        <div class="section-caption">联系我们</div>
+        <div class="contact-email" onclick="copyContactEmail('<?php echo htmlspecialchars($siteEmail, ENT_QUOTES); ?>')">
+          <i class="mdi mdi-email-outline"></i>
+          <span><?php echo htmlspecialchars($siteEmail); ?></span>
+          <i class="mdi mdi-content-copy contact-copy-icon"></i>
+        </div>
+      </div>
+      <?php endif; ?>
     </aside>
 
     <!-- ============ MAIN ============ -->
@@ -518,6 +538,7 @@ if(!$isSuperAdmin) {
         <div class="topbar-actions">
           <div id="clockDisplay"><span></span></div>
           <button id="themeToggle" type="button" title="切换主题"><i class="mdi mdi-weather-night"></i></button>
+          <button id="navChangePwd" type="button" title="修改密码"><i class="mdi mdi-lock-reset"></i></button>
           <a class="ghost-btn" href="../api_doc.php"><i class="mdi mdi-file-document-outline"></i> API 文档</a>
           <div class="avatar-circle">
             <?php if($userAvatar): ?>
@@ -539,6 +560,8 @@ if(!$isSuperAdmin) {
       </div>
       <?php endif; ?>
 
+      <!-- 首页聚合：统计 + 套餐 + 上传 -->
+      <section id="home-section" class="page-section">
       <!-- 统计卡片 -->
       <section class="stats-grid" id="stats-section">
         <article class="stat-card soft-card">
@@ -582,7 +605,7 @@ if(!$isSuperAdmin) {
           <div class="section-heading">
             <div>
               <p class="section-caption">Current Plan</p>
-              <h3>套餐中心</h3>
+              <h3>我的套餐</h3>
             </div>
             <span class="stat-chip violet" id="pkgStatusBadge" style="display:none;">活跃中</span>
           </div>
@@ -719,9 +742,10 @@ if(!$isSuperAdmin) {
           </div>
         </article>
       </section>
+      </section><!-- /home-section -->
 
       <!-- 图片管理 -->
-      <section class="gallery-section soft-card" id="gallery-section">
+      <section class="gallery-section soft-card page-section" id="gallery-section" style="display:none">
         <div class="section-heading">
           <div>
             <p class="section-caption">Image Gallery</p>
@@ -753,7 +777,7 @@ if(!$isSuperAdmin) {
       </section>
 
       <!-- API 密钥管理 -->
-      <section class="soft-card" id="apikeys-section" style="padding:28px;">
+      <section class="soft-card page-section" id="apikeys-section" style="padding:28px;display:none;">
         <div class="section-heading">
           <div>
             <p class="section-caption">API Keys</p>
@@ -768,6 +792,19 @@ if(!$isSuperAdmin) {
         <div id="akListContainer">
           <div style="text-align:center;padding:32px;color:var(--muted);"><i class="mdi mdi-loading mdi-spin"></i> 加载中...</div>
         </div>
+      </section>
+
+      <!-- 套餐购买（AJAX 加载 pricing.php?embed=1） -->
+      <section id="pricing-section" class="page-section pricing-section-wrap" style="display:none">
+        <div class="pricing-loading" id="pricingLoading">
+          <i class="mdi mdi-loading mdi-spin"></i> 正在加载套餐购买页面...
+        </div>
+        <div class="pricing-error" id="pricingError" style="display:none">
+          <i class="mdi mdi-alert-circle-outline"></i>
+          <p>加载失败，请重试</p>
+          <button type="button" class="ghost-btn" id="pricingRetry"><i class="mdi mdi-refresh"></i> 重试</button>
+        </div>
+        <div class="pricing-content" id="pricingContent"></div>
       </section>
 
       <!-- 页脚 -->
@@ -897,6 +934,21 @@ var username = <?php echo json_encode($username);?>;
 
 // ===== 全局工具 =====
 function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+// 复制联系邮箱到剪贴板
+function copyContactEmail(email) {
+  var icon = event.currentTarget.querySelector('.contact-copy-icon');
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(email).then(function() {
+      if (icon) { icon.className = 'mdi mdi-check contact-copy-icon'; }
+      setTimeout(function() { if (icon) { icon.className = 'mdi mdi-content-copy contact-copy-icon'; } }, 1500);
+    });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = email; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); if (icon) { icon.className = 'mdi mdi-check contact-copy-icon'; } setTimeout(function() { if (icon) { icon.className = 'mdi mdi-content-copy contact-copy-icon'; } }, 1500); } catch(e) {}
+    document.body.removeChild(ta);
+  }
+}
 function escAttr(s){return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 // L3: URL 协议白名单校验，防止 javascript:/vbscript:/data: 等 URL 注入
 function safeUrl(url){
@@ -983,14 +1035,151 @@ document.getElementById('sidebarOverlay').addEventListener('click', function(){
   document.getElementById('sidebar').classList.remove('open');
   this.classList.remove('show');
 });
+// ===== Section 切换显示 =====
+// 隐藏所有 .page-section，仅显示目标 section；同步侧边栏 active 状态
+function switchSection(targetId, skipPush){
+  // 隐藏所有 .page-section
+  document.querySelectorAll('.page-section').forEach(function(el){
+    el.style.display = 'none';
+  });
+  // 定位目标
+  var target = document.getElementById(targetId);
+  if(!target){
+    targetId = 'home-section';
+    target = document.getElementById(targetId);
+  }
+  // 显示目标
+  target.style.display = '';
+  // 更新侧边栏 active
+  document.querySelectorAll('.side-nav a').forEach(function(a){
+    a.classList.remove('active');
+  });
+  var activeLink = document.querySelector('.side-nav a[href="#' + targetId + '"]');
+  if(activeLink) activeLink.classList.add('active');
+  // 特殊：pricing-section 触发 AJAX 加载
+  if(targetId === 'pricing-section'){
+    loadPricingSection();
+  }
+  // 记忆当前 section，供 popstate / 首屏恢复使用
+  try { sessionStorage.setItem('user_current_section', targetId); } catch(e) {}
+  // 同步 URL（不带 hash），用 pushState 便于浏览器前进/后退
+  if(!skipPush && history.pushState){
+    history.pushState({section: targetId}, '', window.location.pathname + window.location.search);
+  }
+}
+
+// ===== pricing-section AJAX 无感嵌入 =====
+// 首次切换时 fetch pricing.php?embed=1，缓存后不再重复请求
+function loadPricingSection(){
+  var content = document.getElementById('pricingContent');
+  var loading = document.getElementById('pricingLoading');
+  var errorBox = document.getElementById('pricingError');
+  // 已缓存则直接显示
+  if(content.getAttribute('data-loaded') === '1'){
+    loading.style.display = 'none';
+    errorBox.style.display = 'none';
+    content.style.display = '';
+    return;
+  }
+  // 显示加载中，隐藏错误和内容
+  loading.style.display = '';
+  errorBox.style.display = 'none';
+  content.style.display = 'none';
+  fetch('pricing.php?embed=1', {credentials:'same-origin'})
+    .then(function(res){
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      return res.text();
+    })
+    .then(function(html){
+      content.innerHTML = html;
+      loading.style.display = 'none';
+      content.style.display = '';
+      content.setAttribute('data-loaded', '1');
+      // innerHTML 插入的 <script> 不会自动执行，需手动重建并插入 head
+      content.querySelectorAll('script').forEach(function(oldScript){
+        var newScript = document.createElement('script');
+        if(oldScript.src){
+          newScript.src = oldScript.src;
+        } else {
+          newScript.textContent = oldScript.textContent;
+        }
+        oldScript.parentNode.removeChild(oldScript);
+        document.head.appendChild(newScript);
+      });
+    })
+    .catch(function(){
+      loading.style.display = 'none';
+      errorBox.style.display = '';
+      notify('套餐购买页面加载失败', 'error');
+    });
+}
+
+// pricing 重试按钮：清除缓存后重新加载
+document.getElementById('pricingRetry').addEventListener('click', function(){
+  var content = document.getElementById('pricingContent');
+  content.removeAttribute('data-loaded');
+  content.innerHTML = '';
+  loadPricingSection();
+});
+
+// 侧边栏导航点击：区段切换 / 按钮型 / 外链
 document.querySelectorAll('.side-nav a').forEach(function(item){
-  item.addEventListener('click', function(){
-    if(this.getAttribute('href') && this.getAttribute('href').startsWith('#')){
+  item.addEventListener('click', function(e){
+    var href = this.getAttribute('href');
+    // 按钮型链接（修改密码等）不参与区段切换
+    if(this.id === 'navChangePwd'){
+      document.getElementById('sidebar').classList.remove('open');
+      document.getElementById('sidebarOverlay').classList.remove('show');
+      return;
+    }
+    // 区段切换链接（href 以 # 开头且长度大于 1，有对应 section）
+    if(href && href.length > 1 && href.charAt(0) === '#'){
+      var targetId = href.substring(1);
+      if(document.getElementById(targetId)){
+        e.preventDefault();
+        switchSection(targetId);
+      }
+      // 关闭移动端抽屉
+      document.getElementById('sidebar').classList.remove('open');
+      document.getElementById('sidebarOverlay').classList.remove('show');
+      return;
+    }
+    // 其他 hash 链接（href="#"）仅关闭抽屉
+    if(href && href.charAt(0) === '#'){
       document.getElementById('sidebar').classList.remove('open');
       document.getElementById('sidebarOverlay').classList.remove('show');
     }
   });
 });
+
+// 监听 popstate（浏览器前进/后退导航，URL 不带 hash）
+window.addEventListener('popstate', function(e){
+  var s = (e.state && e.state.section) ? e.state.section : null;
+  if(!s){ try { s = sessionStorage.getItem('user_current_section'); } catch(_) {} }
+  if(!s || !document.getElementById(s)){ s = 'home-section'; }
+  switchSection(s, true);
+});
+
+// 首屏初始化：优先 history.state，其次 sessionStorage，最后默认 home-section；URL 始终无 hash
+(function initSection(){
+  // 清理首屏可能残留的 hash（如旧链接分享带入）
+  if(window.location.hash){
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+  var section = null;
+  if(history.state && history.state.section){
+    section = history.state.section;
+  } else {
+    try { section = sessionStorage.getItem('user_current_section'); } catch(_) {}
+  }
+  if(!section || !document.getElementById(section)){
+    section = 'home-section';
+  }
+  switchSection(section, true);
+  if(history.replaceState){
+    history.replaceState({section: section}, '', window.location.pathname + window.location.search);
+  }
+})();
 
 // ===== 图片预览代理 =====
 function getPreviewUrl(url){
@@ -1749,7 +1938,7 @@ document.getElementById('redeemBtn').addEventListener('click', function(){
         setTimeout(function(){
           var url = window.location.href.split('#')[0];
           var sep = url.indexOf('?') >= 0 ? '&' : '?';
-          window.location.href = url + sep + '_t=' + Date.now() + '#package-section';
+          window.location.href = url + sep + '_t=' + Date.now();
         }, 1500);
       } else {
         notify(d.msg || '兑换失败', 'error');

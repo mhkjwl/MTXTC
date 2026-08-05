@@ -165,4 +165,4 @@ process_expired_packages($DB);
 // 说明：使用 defined() 防止重复定义冲突；dev/ 带 -dev 后缀
 // 原有 VERSION='1001' 常量保持不动，本常量为规范要求的语义化版本号
 // ============================================================
-defined('APP_VERSION') || define('APP_VERSION', '1.3.5');
+defined('APP_VERSION') || define('APP_VERSION', '1.3.6');
