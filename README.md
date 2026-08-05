@@ -131,19 +131,143 @@
 
 ### Nginx 伪静态配置
 
-Apache 用户无需额外配置（已内置 `.htaccess`）。Nginx 用户请在 `server` 块中加入：
+Apache 用户无需额外配置（已内置 `.htaccess`）。Nginx 用户请复制仓库根目录的 [`nginx.txt`](./nginx.txt) 文件内容，粘贴到站点配置的 `server { }` 块内即可。
+
+> ⚠️ 该配置已包含：敏感文件保护、上传目录禁脚本、RESTful API 路由、安全响应头。粘贴后记得在 `server` 块内另行配置 `location ~ \.php$` 的 PHP-FPM 处理，否则 `.php` 文件会被当作下载。
+
+---
+
+## 📖 安装教程
+
+本教程覆盖**宝塔面板**与**手动 LNMP** 两种主流部署方式，按需选择其一。
+
+### 方式 A：宝塔面板（推荐新手）
+
+#### 1. 创建站点
+- 登录宝塔面板 → **网站** → **添加站点**
+- 域名：填写你的域名（如 `img.example.com`）
+- 根目录：保持默认 `/www/wwwroot/你的域名`
+- PHP 版本：选择 **7.4 或 8.x**
+- 数据库：**MySQL**，记住自动生成的库名、用户名、密码
+
+#### 2. 上传代码
+- 进入站点根目录 `/www/wwwroot/你的域名`
+- 将本项目所有文件上传到该目录（可用宝塔「文件」功能上传压缩包后解压）
+- 确保 `.htaccess`、`config.php`、`install/` 等都在站点根目录下
+
+#### 3. 设置运行权限
+- `config.php`：设为可读写（`644` 或 `666`）
+- `install/` 目录：可读写
+- `api/upload/` 与 `api/v1/uploads/`：可读写（上传目录）
+
+#### 4. 运行安装向导
+- 浏览器访问 `http://你的域名/install/`
+- **环境检测**：确认 PHP 版本、扩展（mysqli/mbstring/curl/gd）、目录权限全部通过
+- **填写数据库**：输入宝塔创建的库名、用户名、密码（主机 `127.0.0.1`，端口 `3306`）
+- **创建管理员**：设置后台账号与密码
+- **完成安装**：向导自动建表并生成 `install/install.lock` 锁文件
+
+#### 5. 配置伪静态
+- 宝塔 → 网站 → 设置 → **伪静态**
+- 复制仓库根目录 [`nginx.txt`](./nginx.txt) 的全部内容，粘贴保存
+- Apache 用户跳过此步（项目已内置 `.htaccess`）
+
+#### 6. 安装后加固
+- 删除或重命名 `install/` 目录（`install.lock` 仅防重复安装，非安全防护）
+- 登录后台 `http://你的域名/admin/`，立即修改默认密码
+- 宝塔 → 网站 → 设置 → **SSL** → 申请 Let's Encrypt 免费证书，强制 HTTPS
+
+---
+
+### 方式 B：手动 LNMP
+
+#### 1. 环境准备
+确保已安装：
+- Nginx
+- PHP ≥ 7.4（编译时启用 `--with-mysqli --with-mbstring --with-curl --with-gd`）
+- MySQL ≥ 5.7
+- PHP-FPM
+
+#### 2. 创建数据库
+```sql
+CREATE DATABASE mtxtc DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'mtxtc'@'localhost' IDENTIFIED BY '你的强密码';
+GRANT ALL PRIVILEGES ON mtxtc.* TO 'mtxtc'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+#### 3. 部署代码
+```bash
+# 克隆或上传到站点目录
+cd /var/www/html
+git clone https://github.com/mhkjwl/MTXTC.git mtxtc
+cd mtxtc
+
+# 设置权限
+chown -R www-data:www-data .
+chmod -R 755 .
+chmod 666 config.php
+chmod -R 777 api/upload api/v1/uploads
+```
+
+#### 4. 配置 Nginx
+编辑站点配置（如 `/etc/nginx/conf.d/mtxtc.conf`）：
 
 ```nginx
-rewrite ^/index.html$ /index.php;
-rewrite ^/about.html$ /about.php;
-rewrite ^/search.html$ /search.php;
-rewrite ^/apply.html$ /apply.php;
-rewrite ^/404.html$ /404.php;
-rewrite ^/sort/([1-9]+[0-9]*).html$ /sort.php?id=$1;
-rewrite ^/sort/([a-zA-Z]+).html$ /sort.php?alias=$1;
-rewrite ^/site-([1-9]+[0-9]*).html$ /site.php?id=$1;
-rewrite ^/([a-zA-Z]+).html$ /site.php?alias=$1;
+server {
+    listen 80;
+    server_name img.example.com;
+    root /var/www/html/mtxtc;
+    index index.php index.html;
+
+    # ===== 复制 nginx.txt 全部内容粘贴到此处 =====
+
+    # PHP-FPM 处理（必须配置，否则 .php 会变成下载）
+    location ~ \.php$ {
+        fastcgi_pass unix:/run/php/php8.1-fpm.sock;  # 按实际版本调整
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
+
+    # 防止目录列表
+    autoindex off;
+}
 ```
+
+测试并重载：
+```bash
+nginx -t && systemctl reload nginx
+```
+
+#### 5. 运行安装向导
+浏览器访问 `http://你的域名/install/`，按提示填写数据库信息与管理员账号。
+
+#### 6. 安装后加固
+```bash
+# 删除安装目录
+rm -rf install/
+
+# 或仅保留锁文件、删除入口
+# chmod 000 install/
+```
+- 登录后台修改默认密码
+- 配置 HTTPS（推荐 certbot 申请 Let's Encrypt 证书）
+- 编辑 `php.ini` 设置 `expose_php = Off` 隐藏 PHP 版本
+
+---
+
+### 故障排查
+
+| 现象 | 原因 / 解决 |
+| --- | --- |
+| 访问首页白屏 | PHP 扩展缺失，检查 `mysqli`/`mbstring`/`curl` 是否启用 |
+| 安装页 404 | 伪静态未配置，或 `install/` 目录已删除，重新解压 |
+| `.php` 文件被下载 | Nginx 缺少 `location ~ \.php$` 的 fastcgi 配置 |
+| 上传图片失败 | `api/upload/` 或 `api/v1/uploads/` 权限不足，设为 `755` 或 `777` |
+| 后台登录无响应 | Session 目录不可写，检查 `php.ini` 的 `session.save_path` |
+| 伪静态 404 | Apache 未开启 `mod_rewrite`，或 Nginx 未粘贴 `nginx.txt` 内容 |
+| 邮件验证码收不到 | 检查后台 SMTP 配置（`inc/smtp_mailer.php` 需 curl + openssl 扩展） |
 
 ---
 
