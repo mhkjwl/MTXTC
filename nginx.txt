@@ -14,7 +14,7 @@ location ~* ^/api/v1/uploads/ {
     location ~ \.(php|php3|php4|php5|php7|phtml|pht|phar|cgi|pl|py|asp|aspx|jsp|sh)$ { deny all; }
 }
 
-location ^~ /api/v1/ {
+location /api/v1/ {
     rewrite ^/api/v1/?$ /api/v1/index.php last;
     rewrite ^/api/v1/profile/?$ /api/v1/profile/index.php last;
     rewrite ^/api/v1/strategies/?$ /api/v1/strategies/index.php last;
@@ -24,6 +24,14 @@ location ^~ /api/v1/ {
     rewrite ^/api/v1/images/?$ /api/v1/images/index.php last;
     rewrite ^/api/v1/albums/([^/]+)/?$ /api/v1/albums/index.php?id=$1 last;
     rewrite ^/api/v1/albums/?$ /api/v1/albums/index.php last;
+}
+
+location ~ \.php$ {
+    try_files $uri =404;
+    fastcgi_pass unix:/tmp/php-cgi-74.sock;
+    fastcgi_index index.php;
+    fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    include fastcgi_params;
 }
 
 if ($request_uri !~* \.(php|css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|map)$) {

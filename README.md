@@ -131,9 +131,22 @@
 
 ### Nginx 伪静态配置
 
-Apache 用户无需额外配置（已内置 `.htaccess`）。Nginx 用户请复制仓库根目录的 [`nginx.txt`](./nginx.txt) 文件内容，粘贴到站点配置的 `server { }` 块内即可。
+Apache 用户无需额外配置（已内置 `.htaccess`）。Nginx 用户请复制仓库根目录的 [`nginx.txt`](./nginx.txt) 文件全部内容，粘贴到站点配置的 `server { }` 块内即可——**已集成 PHP-FPM 处理，无需另配**。
 
-> ⚠️ 该配置已包含：敏感文件保护、上传目录禁脚本、RESTful API 路由、安全响应头。粘贴后记得在 `server` 块内另行配置 `location ~ \.php$` 的 PHP-FPM 处理，否则 `.php` 文件会被当作下载。
+> ⚠️ 该配置已包含：敏感文件保护、上传目录禁脚本、RESTful API 路由、PHP-FPM 执行、安全响应头。
+
+**唯一需要按环境调整的行**：`fastcgi_pass`（PHP-FPM 监听地址）。`nginx.txt` 默认填的是宝塔 PHP 7.4 的地址，请按你的环境替换：
+
+| 环境 | `fastcgi_pass` 值 |
+| --- | --- |
+| 宝塔面板 PHP 7.4 | `unix:/tmp/php-cgi-74.sock;`（默认，无需改） |
+| 宝塔面板 PHP 8.0 | `unix:/tmp/php-cgi-80.sock;` |
+| 宝塔面板 PHP 8.1 | `unix:/tmp/php-cgi-81.sock;` |
+| 宝塔面板 PHP 8.2 | `unix:/tmp/php-cgi-82.sock;` |
+| Ubuntu/Debian（PHP-FPM） | `unix:/run/php/php8.1-fpm.sock;`（按版本调整数字） |
+| CentOS/RHEL（默认 TCP） | `127.0.0.1:9000;` |
+
+> 💡 不确定地址时，在服务器执行 `sudo netstat -pl | grep php-fpm` 或宝塔「软件商店 → PHP 设置 → 性能调整」可查看监听地址。
 
 ---
 
@@ -220,17 +233,10 @@ server {
     root /var/www/html/mtxtc;
     index index.php index.html;
 
-    # ===== 复制 nginx.txt 全部内容粘贴到此处 =====
+    # ===== 复制 nginx.txt 全部内容粘贴到此处（已含 PHP-FPM 处理）=====
+    # 注意：nginx.txt 里的 fastcgi_pass 默认是宝塔地址，
+    # 手动 LNMP 环境请按实际 PHP-FPM socket 路径修改（见上方对照表）
 
-    # PHP-FPM 处理（必须配置，否则 .php 会变成下载）
-    location ~ \.php$ {
-        fastcgi_pass unix:/run/php/php8.1-fpm.sock;  # 按实际版本调整
-        fastcgi_index index.php;
-        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-        include fastcgi_params;
-    }
-
-    # 防止目录列表
     autoindex off;
 }
 ```
