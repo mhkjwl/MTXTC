@@ -1,0 +1,28 @@
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs & temp
+*.log
+*.tmp
+*.bak
+*.cache
+
+# WorkBuddy workspace metadata
+.workbuddy/
+
+# Local env / secrets (keep config.php template, ignore real overrides)
+.env
+.env.local
+config.local.php
+
+# Composer / dependencies (if any later)
+/vendor/
