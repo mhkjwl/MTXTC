@@ -1,9 +1,0 @@
-{
-  "name": "tc-image-host-proxy",
-  "version": "1.0.0-dev",
-  "private": true,
-  "description": "Node.js proxy for Cloudflare-protected image hosts (puppeteer-core based)",
-  "dependencies": {
-    "puppeteer-core": "^23.0.0"
-  }
-}

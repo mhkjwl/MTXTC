@@ -29,3 +29,5 @@ config.local.php
 
 # Node.js dependencies (puppeteer-core proxy, not part of PHP app)
 /node_modules/
+package.json
+package-lock.json
