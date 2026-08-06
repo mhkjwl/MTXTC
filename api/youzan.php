@@ -78,7 +78,7 @@ curl_setopt($ch, CURLOPT_HTTPHEADER, array(
 
 $tokenResp = curl_exec($ch);
 $httpCode  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-curl_close($ch);
+unset($ch);
 
 if ($httpCode !== 200 || empty($tokenResp)) {
     @unlink($filepath);
@@ -124,7 +124,7 @@ curl_setopt($ch2, CURLOPT_HTTPHEADER, array(
 
 $uploadResp = curl_exec($ch2);
 $uploadHttpCode = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
-curl_close($ch2);
+unset($ch2);
 @unlink($filepath);
 
 if ($uploadHttpCode !== 200 || empty($uploadResp)) {

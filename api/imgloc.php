@@ -59,7 +59,7 @@ curl_setopt_array($ch, [
 
 $tokenResp = curl_exec($ch);
 $httpCodeGet = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-curl_close($ch);
+unset($ch);
 
 if ($tokenResp === false || $httpCodeGet !== 200) {
     @unlink($filepath);
@@ -104,7 +104,7 @@ curl_setopt_array($ch, [
 $uploadimg = curl_exec($ch);
 $curlErr = curl_error($ch);
 $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-curl_close($ch);
+unset($ch);
 @unlink($filepath);
 
 if ($uploadimg === false || $uploadimg === '') {

@@ -83,11 +83,11 @@ function checkext($ext, $required=true){
 	}
 }
 
-// 步骤映射
-$stepMap = ['0'=>1, '1'=>2, '2'=>3, '3'=>3, '4'=>4, '5'=>5, '6'=>5];
+// 步骤映射（H1+H2：新增「管理员设置」步骤，符合规范 § 8.4.1 六步安装流程）
+$stepMap = ['0'=>1, '1'=>2, '2'=>3, '3'=>3, '4'=>4, '5'=>5, '6'=>6];
 $currentStep = isset($stepMap[$do]) ? $stepMap[$do] : 1;
-$stepLabels = ['协议说明', '环境检测', '数据库配置', '创建数据表', '安装完成'];
-$stepPercents = [10, 25, 50, 75, 100];
+$stepLabels = ['协议说明', '环境检测', '数据库配置', '创建数据表', '管理员设置', '安装完成'];
+$stepPercents = [10, 25, 45, 65, 85, 100];
 $stepPercent = isset($stepPercents[$currentStep-1]) ? $stepPercents[$currentStep-1] : 10;
 ?>
 <!DOCTYPE html>
@@ -260,14 +260,14 @@ body{
 
 	<!-- 步进器 -->
 	<div class="stepper">
-		<?php for($si=0; $si<5; $si++): ?>
+		<?php for($si=0; $si<6; $si++): ?>
 		<div class="step-item <?php echo $currentStep>$si+1?'done':''; ?> <?php echo $currentStep==$si+1?'active':''; ?>">
 			<div class="step-circle">
 				<?php if($currentStep>$si+1): ?><i class="mdi mdi-check"></i><?php else: echo $si+1; endif; ?>
 			</div>
 			<span class="step-label"><?php echo $stepLabels[$si]; ?></span>
 		</div>
-		<?php if($si<4): ?>
+		<?php if($si<5): ?>
 		<div class="step-line <?php echo $currentStep>$si+1?'done':''; ?>"></div>
 		<?php endif; ?>
 		<?php endfor; ?>
@@ -315,8 +315,8 @@ body{
 <?php } elseif($do=='1'){
 // ========== 步骤2: 环境检测 ==========
 $phpVer = PHP_VERSION;
-$phpVerOk = version_compare($phpVer, '7.2.0', '>=');
-$phpVerRecommend = version_compare($phpVer, '8.0.0', '>=');
+// H4 修复：规范 § 8.1 强制 PHP 8.5+，原 7.2 阈值会导致安装后运行时崩溃
+$phpVerOk = version_compare($phpVer, '8.5.0', '>=');
 
 // PHP 扩展检测
 $extChecks = [
@@ -403,11 +403,11 @@ foreach($funcChecks as $c){ if($c['required'] && !$c['ok']) $envAllOk = false; }
 				<thead><tr><th style="width:30%">检测项</th><th style="width:15%">需求</th><th style="width:15%">当前</th><th style="width:40%">说明</th></tr></thead>
 				<tbody>
 					<tr>
-						<td>PHP 版本</td>
-						<td><span class="env-fail">≥ 7.2 必须</span></td>
-						<td class="<?php echo $phpVerOk?'env-ok':'env-fail'; ?>"><?php echo $phpVer; ?></td>
-						<td><?php echo $phpVerOk ? ($phpVerRecommend ? '版本优秀，完全兼容' : '版本可用，建议升级到 8.0+') : 'PHP 版本过低，请升级'; ?></td>
-					</tr>
+							<td>PHP 版本</td>
+							<td><span class="env-fail">≥ 8.5 必须</span></td>
+							<td class="<?php echo $phpVerOk?'env-ok':'env-fail'; ?>"><?php echo $phpVer; ?></td>
+							<td><?php echo $phpVerOk ? '版本符合规范要求' : 'PHP 版本过低，请升级到 8.5+'; ?></td>
+						</tr>
 				</tbody>
 			</table>
 
@@ -603,7 +603,7 @@ if(defined("SAE_ACCESSKEY") || $jump=='1'){
 				echo '<div class="alert-install alert-install-warning"><i class="mdi mdi-alert"></i><div>系统检测到数据库中已有数据表。</div></div>';
 				echo '<div style="display:flex;gap:10px;justify-content:flex-end;">';
 				echo '<a href="?do=6" class="btn-install btn-install-success"><i class="mdi mdi-skip-next"></i> 跳过安装</a>';
-				echo '<a href="?do=4" onclick="if(!confirm(\'全新安装将会清空所有数据，是否继续？\')){return false;}" class="btn-install btn-install-secondary"><i class="mdi mdi-refresh"></i> 强制全新安装</a>';
+				echo '<a href="javascript:void(0)" onclick="confirmFreshInstall()" class="btn-install btn-install-secondary"><i class="mdi mdi-refresh"></i> 强制全新安装</a>';
 				echo '</div>';
 			}
 		}
@@ -624,18 +624,17 @@ if(defined("SAE_ACCESSKEY") || $jump=='1'){
 		echo '<a class="btn-install btn-install-secondary" href="index.php?do=2"><i class="mdi mdi-arrow-left"></i> 返回修改</a>';
 	} else {
 		$db_port = (int)$db_port;
-		$e_host = addslashes($db_host);
-		$e_user = addslashes($db_user);
-		$e_pwd  = addslashes($db_pwd);
-		$e_name = addslashes($db_name);
+		// M5 修复：原用 addslashes() 拼接单引号字符串，但 addslashes 会把 " 转义为 \"、NUL 转义为 \0，
+		//          而单引号字符串中 \" 与 \0 并非合法转义序列，读回时凭据会被破坏（多出反斜杠）。
+		//          改用 var_export() 生成合法 PHP 字面量，确保含任意特殊字符的数据库凭据都能正确回读
 		$config="<?php
 /*数据库配置*/
 \$dbconfig=array(
-	'host' => '{$e_host}',
-	'port' => {$db_port},
-	'user' => '{$e_user}',
-	'pwd' => '{$e_pwd}',
-	'dbname' => '{$e_name}'
+	'host' => " . var_export($db_host, true) . ",
+	'port' => " . var_export($db_port, true) . ",
+	'user' => " . var_export($db_user, true) . ",
+	'pwd' => " . var_export($db_pwd, true) . ",
+	'dbname' => " . var_export($db_name, true) . "
 );
 ?>";
 		$con=DB::connect($db_host,$db_user,$db_pwd,$db_name,$db_port);
@@ -658,7 +657,7 @@ if(defined("SAE_ACCESSKEY") || $jump=='1'){
 				echo '<div class="alert-install alert-install-warning"><i class="mdi mdi-alert"></i><div>系统检测到数据库中已有数据表。</div></div>';
 				echo '<div style="display:flex;gap:10px;justify-content:flex-end;">';
 				echo '<a href="?do=6" class="btn-install btn-install-success"><i class="mdi mdi-skip-next"></i> 跳过安装</a>';
-				echo '<a href="?do=4" onclick="if(!confirm(\'全新安装将会清空所有数据，是否继续？\')){return false;}" class="btn-install btn-install-secondary"><i class="mdi mdi-refresh"></i> 强制全新安装</a>';
+				echo '<a href="javascript:void(0)" onclick="confirmFreshInstall()" class="btn-install btn-install-secondary"><i class="mdi mdi-refresh"></i> 强制全新安装</a>';
 				echo '</div>';
 			}
 		} else {
@@ -719,21 +718,83 @@ if(empty($dbconfig['user'])||!isset($dbconfig['pwd'])||empty($dbconfig['dbname']
 ?>
 		</div>
 
-<?php } elseif($do=='5'){ ?>
-		<!-- 步骤5: 安装完成 -->
+<?php } elseif($do=='5'){
+// ========== 步骤5: 管理员账户设置（H1+H2：废除默认 admin/123456，用户设置强密码，password_hash 存储）==========
+$adminErr = '';
+$showComplete = false;
+$completedUser = 'admin';
+if($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if(!install_csrf_verify()) {
+        $adminErr = '安全校验失败，请刷新页面后重试';
+    } else {
+        $adminUser = trim($_POST['admin_user'] ?? '');
+        $adminPwd = $_POST['admin_pwd'] ?? '';
+        $adminPwdConfirm = $_POST['admin_pwd_confirm'] ?? '';
+        $adminEmail = trim($_POST['admin_email'] ?? '');
+        // 校验用户名
+        if($adminUser === '' || mb_strlen($adminUser, 'UTF-8') > 64) {
+            $adminErr = '管理员用户名不能为空且不能超过 64 个字符';
+        }
+        // 校验密码强度（≥8 位，含大小写+数字+特殊字符，规范 § 8.4.3）
+        elseif(mb_strlen($adminPwd, 'UTF-8') < 8
+            || !preg_match('/[A-Z]/', $adminPwd)
+            || !preg_match('/[a-z]/', $adminPwd)
+            || !preg_match('/[0-9]/', $adminPwd)
+            || !preg_match('/[^A-Za-z0-9]/', $adminPwd)) {
+            $adminErr = '密码至少 8 位，且必须包含大写字母、小写字母、数字和特殊字符';
+        }
+        elseif($adminPwd !== $adminPwdConfirm) {
+            $adminErr = '两次输入的密码不一致';
+        }
+        else {
+            require_once './db.class.php';
+            include_once '../config.php';
+            $cn = DB::connect($dbconfig['host'],$dbconfig['user'],$dbconfig['pwd'],$dbconfig['dbname'],$dbconfig['port']);
+            if(!$cn) {
+                $adminErr = '数据库连接失败，请返回上一步检查配置';
+            } else {
+                mysqli_query($cn, "set names utf8mb4");
+                // password_hash 存储（规范 § 8.2.3），使用预处理防止 SQL 注入
+                $hash = password_hash($adminPwd, PASSWORD_DEFAULT);
+                $stmt = mysqli_prepare($cn, "UPDATE eecms_config SET main=? WHERE name='admin_user'");
+                mysqli_stmt_bind_param($stmt, 's', $adminUser);
+                $ok1 = mysqli_stmt_execute($stmt);
+                mysqli_stmt_close($stmt);
+                $stmt2 = mysqli_prepare($cn, "UPDATE eecms_config SET main=? WHERE name='admin_pwd'");
+                mysqli_stmt_bind_param($stmt2, 's', $hash);
+                $ok2 = mysqli_stmt_execute($stmt2);
+                mysqli_stmt_close($stmt2);
+                if($adminEmail !== '') {
+                    $stmt3 = mysqli_prepare($cn, "UPDATE eecms_config SET main=? WHERE name='email'");
+                    mysqli_stmt_bind_param($stmt3, 's', $adminEmail);
+                    mysqli_stmt_execute($stmt3);
+                    mysqli_stmt_close($stmt3);
+                }
+                if($ok1 && $ok2) {
+                    @file_put_contents("install.lock",'安装锁');
+                    $showComplete = true;
+                    $completedUser = $adminUser;
+                } else {
+                    $adminErr = '管理员账户保存失败，请重试';
+                }
+            }
+        }
+    }
+}
+
+if($showComplete) {
+    // 显示安装完成页（不显示密码明文，符合规范 § 8.4.3）
+?>
+		<!-- 步骤6: 安装完成 -->
 		<div class="card-body-custom" style="text-align:center; padding:48px 28px;">
 			<div class="complete-icon"><i class="mdi mdi-check"></i></div>
 			<h2 style="font-size:22px; font-weight:700; color:var(--text); margin:0 0 8px;">安装完成！</h2>
 			<p style="font-size:14px; color:var(--text-muted); margin:0 0 24px;">系统已成功安装，可以开始使用了</p>
-<?php
-	@file_put_contents("install.lock",'安装锁');
-?>
-			<div class="alert-install alert-install-info" style="text-align:left;">
-				<i class="mdi mdi-account-key"></i>
+			<div class="alert-install alert-install-success" style="text-align:left;">
+				<i class="mdi mdi-account-check"></i>
 				<div>
-					<strong>默认管理员账号：</strong>admin<br>
-					<strong>默认密码：</strong>123456<br>
-					<span style="color:var(--fail);font-size:12px;margin-top:4px;display:block;"><i class="mdi mdi-alert"></i> 请登录后立即修改密码！</span>
+					<strong>管理员账号：</strong><?php echo htmlspecialchars($completedUser, ENT_QUOTES, 'UTF-8'); ?><br>
+					<span style="color:var(--ok);font-size:12px;margin-top:4px;display:block;"><i class="mdi mdi-check-circle"></i> 密码已使用 bcrypt 安全哈希存储，请用刚才设置的密码登录</span>
 				</div>
 			</div>
 			<div class="alert-install alert-install-warning" style="text-align:left;">
@@ -745,6 +806,51 @@ if(empty($dbconfig['user'])||!isset($dbconfig['pwd'])||empty($dbconfig['dbname']
 				<a href="../admin/" class="btn-install btn-install-primary"><i class="mdi mdi-cog"></i> 后台管理</a>
 			</div>
 		</div>
+<?php } else { ?>
+		<!-- 步骤5: 管理员账户设置 -->
+		<div class="card-header-custom">
+			<i class="mdi mdi-account-plus-outline"></i>
+			<h3>管理员账户设置</h3>
+		</div>
+		<div class="card-body-custom">
+		<?php if($adminErr): ?>
+			<div class="alert-install alert-install-danger"><i class="mdi mdi-alert-circle"></i><div><?php echo htmlspecialchars($adminErr, ENT_QUOTES, 'UTF-8'); ?></div></div>
+		<?php else: ?>
+			<div class="alert-install alert-install-info"><i class="mdi mdi-shield-account-outline"></i><div>请设置后台管理员账户和密码。密码将使用 bcrypt 哈希安全存储（规范 § 8.2.3），不再使用默认弱密码。</div></div>
+		<?php endif; ?>
+			<form action="?do=5" method="post">
+			<input type="hidden" name="csrf_token" value="<?php echo install_csrf_token();?>">
+				<div class="form-group-install">
+					<label>管理员用户名</label>
+					<input type="text" class="form-control" name="admin_user" value="admin" maxlength="64" required autocomplete="username">
+					<div class="form-hint">后台登录用户名，建议修改为非默认值</div>
+				</div>
+				<div class="row">
+					<div class="col-md-6">
+						<div class="form-group-install">
+							<label>登录密码</label>
+							<input type="password" class="form-control" name="admin_pwd" required autocomplete="new-password">
+							<div class="form-hint">至少 8 位，含大小写字母+数字+特殊字符</div>
+						</div>
+					</div>
+					<div class="col-md-6">
+						<div class="form-group-install">
+							<label>确认密码</label>
+							<input type="password" class="form-control" name="admin_pwd_confirm" required autocomplete="new-password">
+						</div>
+					</div>
+				</div>
+				<div class="form-group-install">
+					<label>管理员邮箱（可选）</label>
+					<input type="email" class="form-control" name="admin_email" placeholder="用于密码找回">
+				</div>
+				<div class="nav-btns">
+					<a class="btn-install btn-install-secondary" href="index.php?do=4"><i class="mdi mdi-arrow-left"></i> 上一步</a>
+					<button type="submit" class="btn-install btn-install-primary">完成安装 <i class="mdi mdi-check"></i></button>
+				</div>
+			</form>
+		</div>
+<?php } ?>
 
 <?php } elseif($do=='6'){ ?>
 		<!-- 步骤5: 跳过安装完成 -->
@@ -774,6 +880,26 @@ if(empty($dbconfig['user'])||!isset($dbconfig['pwd'])||empty($dbconfig['dbname']
 	</div>
 
 </div><!-- /.install-wrapper -->
+
+<!-- H3 修复：用 SweetAlert2 替代浏览器原生 confirm()，符合规范 § 3.2 / § 4.2 -->
+<script src="../admin/style/js/sweetalert2.min.js"></script>
+<script>
+function confirmFreshInstall(){
+    Swal.fire({
+        title: '确认全新安装',
+        text: '全新安装将会清空所有数据，此操作不可恢复！',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: '确认全新安装',
+        cancelButtonText: '取消',
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#94a3b8',
+        reverseButtons: true
+    }).then(function(result){
+        if(result.isConfirmed) window.location.href = 'index.php?do=4';
+    });
+}
+</script>
 
 </body>
 </html>

@@ -216,7 +216,7 @@ $curlErr = curl_error($ch);
 $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
 
 if($httpCode === 0 && $response === false) {
-    curl_close($ch);
+    unset($ch);
     echo json_encode(["code" => 201, "msg" => "连接 S3 服务失败：" . ($curlErr ?: '未知错误')]);
     exit;
 }
@@ -225,7 +225,7 @@ if($httpCode === 0 && $response === false) {
 $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
 $headersRaw = substr($response, 0, $headerSize);
 $body = substr($response, $headerSize);
-curl_close($ch);
+unset($ch);
 
 // 7. 处理结果
 // 2xx 为成功

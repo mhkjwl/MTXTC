@@ -57,6 +57,12 @@ if(isset($_POST['action'])) {
         }
         $filter  = $_POST['filter'] ?? 'all';
         $batchNo = trim($_POST['batch_no'] ?? '');
+        // H7 修复：导出 filter 改为白名单校验，仅允许 unused/expired
+        //         原黑名单只拦截 used/all，任意其他值会落入 redeem_build_where 的兜底分支
+        //         返回全部记录（含已使用兑换码明文），导致 H17 防护被绕过
+        if(!in_array($filter, ['unused', 'expired'], true)) {
+            $filter = 'unused';
+        }
         $w       = redeem_build_where($DB, $filter, $batchNo);
 
         $codeRows = [];
@@ -97,7 +103,10 @@ if(isset($_POST['action'])) {
         $start = ($page - 1) * $perPage;
 
         $codeRows = [];
-        $rs = $DB->fetch_all_prepared("SELECT r.*, p.name AS package_name FROM eecms_redeem_codes r LEFT JOIN eecms_packages p ON r.target_package_id=p.id" . $w['where'] . " ORDER BY r.id DESC LIMIT {$start}, {$perPage}", $w['types'], $w['params']);
+        // H9 修复：LIMIT 子句改为预处理占位符，禁止 SQL 字符串拼接
+        $listTypes  = $w['types'] . 'ii';
+        $listParams = array_merge($w['params'], [$start, $perPage]);
+        $rs = $DB->fetch_all_prepared("SELECT r.*, p.name AS package_name FROM eecms_redeem_codes r LEFT JOIN eecms_packages p ON r.target_package_id=p.id" . $w['where'] . " ORDER BY r.id DESC LIMIT ?, ?", $listTypes, $listParams);
         if($rs) {
             while(($row = $DB->fetch($rs))) {
                 $codeRows[] = $row;
@@ -144,6 +153,9 @@ if(isset($_POST['action'])) {
         $expiresAt       = (isset($_POST['expires_at']) && $_POST['expires_at'] !== '') ? trim($_POST['expires_at']) : null;
 
         if($targetPackageId <= 0) json_exit(1, '请选择目标套餐');
+        // M13 修复：校验目标套餐存在且启用（status=1），禁止对已删除套餐生成兑换码
+        $pkg = pkg_safe_get_row_prepared($DB, "SELECT id, name FROM eecms_packages WHERE id=? AND status=1", 'i', [$targetPackageId]);
+        if(!$pkg) json_exit(1, '目标套餐不存在或已删除，请刷新后重试');
         if($count < 1 || $count > 500) json_exit(1, '生成数量必须在 1-500 之间');
         if($customDays !== null && $customDays <= 0) json_exit(1, '自定义天数必须大于 0');
         if($expiresAt !== null) {
@@ -207,10 +219,13 @@ if(isset($_POST['action'])) {
         if(count($deletedIds) === 0) {
             json_exit(1, '所选兑换码均已被使用，无法删除');
         }
-        $ok = pkg_safe_query_prepared($DB, "DELETE FROM eecms_redeem_codes WHERE id IN (" . implode(',', array_fill(0, count($deletedIds), '?')) . ")", str_repeat('i', count($deletedIds)), $deletedIds);
+        // H9 修复：DELETE 加 used_user_id=0 条件，防止窗口期内被兑换的码被删除
+        $ok = pkg_safe_query_prepared($DB, "DELETE FROM eecms_redeem_codes WHERE id IN (" . implode(',', array_fill(0, count($deletedIds), '?')) . ") AND used_user_id = 0", str_repeat('i', count($deletedIds)), $deletedIds);
         $affected = ($ok === false) ? 0 : (int)$ok;
 
-        log_admin_action($DB, 'redeem_delete_selected', 'redeem_code', 0, ['count' => $affected, 'codes' => $codes]);
+        // L13 修复：日志仅记录数量和码前缀摘要，不记录完整码列表
+        $codeSummary = array_map(function($c){ return substr($c, 0, 4) . '****'; }, $codes);
+        log_admin_action($DB, 'redeem_delete_selected', 'redeem_code', 0, ['count' => $affected, 'code_prefixes' => $codeSummary]);
         $skipped = count($intIds) - $affected;
         $msg = "已删除 {$affected} 个未使用的兑换码";
         if($skipped > 0) $msg .= "（跳过 {$skipped} 个已使用/已过期的）";
@@ -223,8 +238,9 @@ if(isset($_POST['action'])) {
         if($batchNo === '') json_exit(1, '批次号不能为空');
 
         // 仅删除未使用的（已使用的保留以备查）
-        $affected = $DB->query_prepared("DELETE FROM eecms_redeem_codes WHERE batch_no=? AND used_user_id = 0", 's', [$batchNo]);
-        if($affected === false) $affected = 0;
+        // M8 修复：query_prepared 返回 bool，改用 pkg_safe_query_prepared 获取真实行数
+        $ok = pkg_safe_query_prepared($DB, "DELETE FROM eecms_redeem_codes WHERE batch_no=? AND used_user_id = 0", 's', [$batchNo]);
+        $affected = ($ok === false) ? 0 : (int)$ok;
 
         log_admin_action($DB, 'redeem_delete_batch', 'redeem_code', 0, ['batch_no' => $batchNo, 'count' => $affected]);
         json_exit(0, "已删除 {$affected} 个未使用的兑换码", ['count' => $affected]);
@@ -528,11 +544,13 @@ if(isset($_POST['action'])) {
   </div>
 </div>
 
-<script defer src="style/js/jquery.min.js"></script>
-<script defer src="style/js/bootstrap.min.js"></script>
-<script defer src="style/js/sweetalert2.min.js"></script>
+<script src="style/js/jquery.min.js"></script>
+<script src="style/js/bootstrap.min.js"></script>
+<script src="style/js/sweetalert2.min.js"></script>
 <script>
 var CSRF_TOKEN = '<?php echo csrf_token();?>';
+// M5 修复：CSRF Token 统一通过 Header 传递，不再放 POST Body
+$.ajaxSetup({ beforeSend: function(xhr){ xhr.setRequestHeader('X-CSRF-Token', CSRF_TOKEN); } });
 var generateModal;
 var detailModal;
 var _detailCode = '';
@@ -545,6 +563,32 @@ window.addEventListener('DOMContentLoaded', function(){
     detailModal = new bootstrap.Modal(document.getElementById('detailModal'));
     loadStats();
     loadCodes(1);
+
+    // M4 修复：事件委托替代内联 onclick/onchange，避免字符串拼接导致 XSS
+    $('#codesTableBody').on('change', '.row-check', function(){
+        var id = parseInt($(this).data('id'), 10);
+        if(!isNaN(id)) toggleRow(id, this.checked);
+    });
+    $('#codesTableBody').on('click', '.act-filter-batch', function(){
+        var batch = $(this).data('batch') || '';
+        filterByBatch(batch);
+    });
+    $('#codesTableBody').on('click', '.act-view-code', function(){
+        var id = parseInt($(this).data('id'), 10);
+        if(!isNaN(id)) viewDetail(id);
+    });
+    $('#codesTableBody').on('click', '.act-delete-code', function(){
+        var id = parseInt($(this).data('id'), 10);
+        var code = $(this).data('code') || '';
+        if(!isNaN(id)) deleteCode(id, code);
+    });
+    $('#codesPagination').on('click', '.page-link', function(e){
+        e.preventDefault();
+        var li = $(this).closest('.page-item');
+        if(li.hasClass('disabled')) return;
+        var page = parseInt($(this).data('page'), 10);
+        if(!isNaN(page) && page > 0) loadCodes(page);
+    });
 });
 
 function escHtml(str){
@@ -568,7 +612,7 @@ function toast(type, msg, timer){
 function loadStats(){
     $.ajax({
         url:'redeem.php', type:'POST', dataType:'json',
-        data:{ action:'stats', csrf_token:CSRF_TOKEN },
+        data:{ action:'stats' },
         success:function(res){
             if(res.code === 0){
                 $('#statTotal').text(res.data.total);
@@ -591,8 +635,7 @@ function loadCodes(page){
             page:page,
             perPage:20,
             filter:$('#filterSelect').val(),
-            batch_no:$('#batchInput').val().trim(),
-            csrf_token:CSRF_TOKEN
+            batch_no:$('#batchInput').val().trim()
         },
         success:function(res){
             if(res.code === 0){
@@ -630,19 +673,19 @@ function renderTable(data){
         var usedAt = c.used_at ? escHtml(c.used_at) : '<span class="text-muted">-</span>';
         var expiresAt = c.expires_at ? '<div style="font-size:12px;color:#94a3b8;">过期：'+escHtml(c.expires_at)+'</div>' : '';
         var batchCell = c.batch_no
-            ? '<a href="javascript:void(0)" title="点击按此批次筛选" onclick="filterByBatch(\''+escHtml(c.batch_no).replace(/'/g,"\\'")+'\')">'+escHtml(c.batch_no)+'</a>'
+            ? '<a href="javascript:void(0)" title="点击按此批次筛选" class="act-filter-batch" data-batch="'+escHtml(c.batch_no)+'">'+escHtml(c.batch_no)+'</a>'
             : '<span class="text-muted">-</span>';
 
         var checkDisabled = (c.status !== 'unused');
         var checkedAttr = _selectedIds.has(c.id) ? ' checked' : '';
         var checkCell = checkDisabled
             ? '<input type="checkbox" class="row-check" disabled title="已使用/已过期不可选">'
-            : '<input type="checkbox" class="row-check" value="'+c.id+'"'+checkedAttr+' onchange="toggleRow('+c.id+', this.checked)">';
+            : '<input type="checkbox" class="row-check" value="'+c.id+'"'+checkedAttr+' data-id="'+c.id+'">';
 
         var actions = '<div class="btn-group btn-group-sm">';
-        actions += '<button type="button" class="btn btn-outline-info" onclick="viewDetail('+c.id+')" title="查看详情"><i class="mdi mdi-eye-outline"></i></button>';
+        actions += '<button type="button" class="btn btn-outline-info act-view-code" data-id="'+c.id+'" title="查看详情"><i class="mdi mdi-eye-outline"></i></button>';
         if(c.status === 'unused'){
-            actions += '<button type="button" class="btn btn-outline-danger" onclick="deleteCode('+c.id+',\''+escHtml(c.code).replace(/'/g,"\\'")+'\')" title="删除"><i class="mdi mdi-delete"></i></button>';
+            actions += '<button type="button" class="btn btn-outline-danger act-delete-code" data-id="'+c.id+'" data-code="'+escHtml(c.code)+'" title="删除"><i class="mdi mdi-delete"></i></button>';
         } else {
             actions += '<button type="button" class="btn btn-outline-secondary" disabled title="已使用/已过期不可删除"><i class="mdi mdi-delete-off"></i></button>';
         }
@@ -740,7 +783,7 @@ function batchDeleteSelected(){
         if(result.isConfirmed){
             $.ajax({
                 url:'redeem.php', type:'POST', dataType:'json',
-                data:{ action:'delete_selected', ids:ids, csrf_token:CSRF_TOKEN },
+                data:{ action:'delete_selected', ids:ids },
                 success:function(res){
                     if(res.code === 0){
                         toast('success', res.msg);
@@ -763,21 +806,22 @@ function renderPagination(data){
     if(data.totalPages <= 1) return;
     var nav = $('<nav><ul class="pagination mb-0"></ul></nav>');
     var ul = nav.find('ul');
-    ul.append('<li class="page-item '+(data.page<=1?'disabled':'')+'"><a class="page-link" href="javascript:void(0)" onclick="loadCodes('+(data.page-1)+')">上一页</a></li>');
+    // M4 修复：分页 onclick 改用 data-page + 事件委托
+    ul.append('<li class="page-item '+(data.page<=1?'disabled':'')+'"><a class="page-link" href="javascript:void(0)" data-page="'+(data.page-1)+'">上一页</a></li>');
     var start = Math.max(1, data.page - 2);
     var end = Math.min(data.totalPages, data.page + 2);
     if(start > 1){
-        ul.append('<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="loadCodes(1)">1</a></li>');
+        ul.append('<li class="page-item"><a class="page-link" href="javascript:void(0)" data-page="1">1</a></li>');
         if(start > 2) ul.append('<li class="page-item disabled"><span class="page-link">...</span></li>');
     }
     for(var p = start; p <= end; p++){
-        ul.append('<li class="page-item '+(p===data.page?'active':'')+'"><a class="page-link" href="javascript:void(0)" onclick="loadCodes('+p+')">'+p+'</a></li>');
+        ul.append('<li class="page-item '+(p===data.page?'active':'')+'"><a class="page-link" href="javascript:void(0)" data-page="'+p+'">'+p+'</a></li>');
     }
     if(end < data.totalPages){
         if(end < data.totalPages - 1) ul.append('<li class="page-item disabled"><span class="page-link">...</span></li>');
-        ul.append('<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="loadCodes('+data.totalPages+')">'+data.totalPages+'</a></li>');
+        ul.append('<li class="page-item"><a class="page-link" href="javascript:void(0)" data-page="'+data.totalPages+'">'+data.totalPages+'</a></li>');
     }
-    ul.append('<li class="page-item '+(data.page>=data.totalPages?'disabled':'')+'"><a class="page-link" href="javascript:void(0)" onclick="loadCodes('+(data.page+1)+')">下一页</a></li>');
+    ul.append('<li class="page-item '+(data.page>=data.totalPages?'disabled':'')+'"><a class="page-link" href="javascript:void(0)" data-page="'+(data.page+1)+'">下一页</a></li>');
     box.append(nav);
 }
 
@@ -809,7 +853,7 @@ function deleteCode(id, code){
         if(result.isConfirmed){
             $.ajax({
                 url:'redeem.php', type:'POST', dataType:'json',
-                data:{ action:'delete', id:id, csrf_token:CSRF_TOKEN },
+                data:{ action:'delete', id:id },
                 success:function(res){
                     if(res.code === 0){
                         toast('success', res.msg);
@@ -845,7 +889,7 @@ function deleteBatch(){
         if(result.isConfirmed){
             $.ajax({
                 url:'redeem.php', type:'POST', dataType:'json',
-                data:{ action:'delete_batch', batch_no:batchNo, csrf_token:CSRF_TOKEN },
+                data:{ action:'delete_batch', batch_no:batchNo },
                 success:function(res){
                     if(res.code === 0){
                         toast('success', res.msg);
@@ -881,8 +925,7 @@ function generateCodes(){
         target_package_id:$('#genPackage').val(),
         count:$('#genCount').val(),
         custom_days:$('#genDays').val().trim(),
-        expires_at:$('#genExpires').val().trim(),
-        csrf_token:CSRF_TOKEN
+        expires_at:$('#genExpires').val().trim()
     };
     if(!data.target_package_id){ toast('warning', '请选择目标套餐'); return; }
     if(data.count < 1 || data.count > 500){ toast('warning', '生成数量必须在 1-500 之间'); return; }
@@ -960,8 +1003,7 @@ function exportCodes(){
         data:{
             action:'export',
             filter:$('#filterSelect').val(),
-            batch_no:$('#batchInput').val().trim(),
-            csrf_token:CSRF_TOKEN
+            batch_no:$('#batchInput').val().trim()
         },
         success:function(text){
             if(!text){ toast('info', '当前筛选条件下没有兑换码'); return; }
@@ -989,7 +1031,7 @@ function downloadText(text, filename){
 function viewDetail(id){
     $.ajax({
         url:'redeem.php', type:'POST', dataType:'json',
-        data:{ action:'detail', id:id, csrf_token:CSRF_TOKEN },
+        data:{ action:'detail', id:id },
         success:function(res){
             if(res.code === 0){
                 renderDetail(res.data);

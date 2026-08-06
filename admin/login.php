@@ -12,66 +12,98 @@ ini_set("display_errors", 0);
 require('../inc/lang.php');
 require('../inc/common.php');
 
-$toast_type = ''; $toast_msg = '';
 $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
 
-if(isset($_POST['user']) && isset($_POST['pass'])){
-    // CSRF 校验：防止登录 CSRF 攻击
-    if(!csrf_verify()) {
-        $toast_type = 'error';
-        $toast_msg = '安全校验失败，请刷新页面后重试！';
-    }
-    $user = trim((string)$_POST['user']);
-    $pass = (string)$_POST['pass'];
-    if($toast_type === '' && ($user === '' || $pass === '')) {
-        $toast_type = 'warning';
-        $toast_msg = '请填写完整的用户名和密码！';
-    }
+// 统一 JSON 响应并终止（登录/登出均返回 JSON，前端 AJAX 处理，禁止 header Location 整页刷新）
+function login_json(int $code, string $msg, array $data = []): void {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['code' => $code, 'msg' => $msg, 'data' => $data], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+// ========== 登录处理（POST + CSRF，禁止 GET 触发）==========
+if(isset($_POST['action']) && $_POST['action'] === 'login') {
+    if(!csrf_verify()) login_json(1, '安全校验失败，请刷新页面后重试！');
+    $user = trim((string)($_POST['user'] ?? ''));
+    $pass = (string)($_POST['pass'] ?? '');
+    if($user === '' || $pass === '') login_json(1, '请填写完整的用户名和密码！');
     // 防爆破：基于服务端文件的失败计数（按 IP），清 Cookie/换会话无法绕过
     $f2bKey = 'admin_login_' . (isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : 'unknown');
     $lockRemain = f2b_locked_seconds($f2bKey);
-    if($toast_msg) {
-        // 字段不完整，跳过登录逻辑
-    } elseif($lockRemain > 0){
+    if($lockRemain > 0) {
         $wait = ceil($lockRemain / 60);
-        $toast_type = 'error';
-        $toast_msg = "登录尝试过于频繁，请 {$wait} 分钟后再试！";
+        login_json(1, "登录尝试过于频繁，请 {$wait} 分钟后再试！");
+    }
+    $stored = isset($conf['admin_pwd']) ? (string)$conf['admin_pwd'] : '';
+    // M1 修复：禁止裸明文比对，分别检测 bcrypt/argon2/MD5/SHA1
+    $isBcrypt = (strpos($stored, '$2y$') === 0);
+    $isArgon2 = (strpos($stored, '$argon2') === 0);
+    $isMd5    = !$isBcrypt && !$isArgon2 && (strlen($stored) === 32 && ctype_xdigit($stored));
+    $isSha1   = !$isBcrypt && !$isArgon2 && !$isMd5 && (strlen($stored) === 40 && ctype_xdigit($stored));
+    $isHashed = $isBcrypt || $isArgon2;
+    $needMigrate = false; // 标记需要迁移到 bcrypt
+    if($isBcrypt || $isArgon2) {
+        $passOk = password_verify($pass, $stored);
+    } elseif($isMd5) {
+        // M1 修复：MD5 用对应算法比对后标记迁移
+        $passOk = hash_equals($stored, md5($pass));
+        $needMigrate = true;
+    } elseif($isSha1) {
+        // M1 修复：SHA1 用对应算法比对后标记迁移
+        $passOk = hash_equals($stored, sha1($pass));
+        $needMigrate = true;
     } else {
-        $user = daddslashes($_POST['user']);
-        $pass = (string)$_POST['pass'];
-        $stored = isset($conf['admin_pwd']) ? (string)$conf['admin_pwd'] : '';
-        $isHashed = (strpos($stored, '$2y$') === 0 || strpos($stored, '$argon2') === 0);
-        $passOk = $isHashed ? password_verify($pass, $stored) : hash_equals($stored, $pass);
-        if($user === $conf['admin_user'] && $passOk) {
-            f2b_reset($f2bKey);
-            // 会话固定攻击防护：重新生成 session ID
-            session_regenerate_id(true);
-            // 如果密码是明文存储，登录成功后自动迁移为 bcrypt hash
-            if(!$isHashed) {
-                $newHash = password_hash($pass, PASSWORD_DEFAULT);
-                $newHashEsc = daddslashes($newHash);
-                $DB->query("update `eecms_config` set `main`='{$newHashEsc}' where `name`='admin_pwd'");
-                $stored = $newHash;
-            }
-            $session = md5($conf['admin_user'].$stored.$password_hash);
-            $token = authcode("{$user}\t{$session}", 'ENCODE', SYS_KEY);
-            setcookie("admin_token", $token, time() + 604800, '/', '', $isHttps, true);
-            @header('Location: index.php');
-            exit;
-        } else {
-            f2b_hit($f2bKey, 5, 600, 600);
-            $toast_type = 'error';
-            $toast_msg = '用户名或密码不正确！';
+        // M1 修复：禁止裸明文比对，非已知格式一律拒绝（防止明文密码被探测）
+        $passOk = false;
+    }
+    if($user === $conf['admin_user'] && $passOk) {
+        f2b_reset($f2bKey);
+        // 会话固定攻击防护：重新生成 session ID
+        session_regenerate_id(true);
+        // 密码哈希迁移：MD5/SHA1 → bcrypt（明文不再支持，已拒绝）
+        if($needMigrate) {
+            $newHash = password_hash($pass, PASSWORD_DEFAULT);
+            $DB->query_prepared("UPDATE eecms_config SET main=? WHERE name=?", 'ss', [$newHash, 'admin_pwd']);
+            $stored = $newHash;
         }
+        // M2 修复：会话令牌改用 hash_hmac('sha256')，与 inc/member.php 同步
+        // 旧版用 md5($user.$stored.$password_hash) 违反"MD5/SHA1 禁止"硬约束
+        $session = hash_hmac('sha256', $user . $stored, SYS_KEY);
+        $token = authcode("{$user}\t{$session}", 'ENCODE', SYS_KEY);
+        // M4 修复：Cookie 增加 SameSite=Lax（通过数组形式设置 options）
+        $cookieOpts = [
+            'expires'  => time() + 604800,
+            'path'     => '/',
+            'domain'   => '',
+            'secure'   => $isHttps,
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ];
+        setcookie("admin_token", $token, $cookieOpts);
+        login_json(0, '登录成功');
+    } else {
+        f2b_hit($f2bKey, 5, 600, 600);
+        login_json(1, '用户名或密码不正确！');
     }
 }
-elseif(isset($_GET['logout'])){
-    setcookie("admin_token", "", time() - 604800, '/', '', $isHttps, true);
-    @header('Location: login.php');
-    exit;
+// ========== 登出处理（POST + CSRF，禁止 GET 触发写操作，防止 CSRF 登出攻击）==========
+elseif(isset($_POST['action']) && $_POST['action'] === 'logout') {
+    if(!csrf_verify()) login_json(1, '安全校验失败，请刷新页面后重试！');
+    // M4 修复：登出 cookie 同样设置 SameSite
+    $cookieOpts = [
+        'expires'  => time() - 604800,
+        'path'     => '/',
+        'domain'   => '',
+        'secure'   => $isHttps,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ];
+    setcookie("admin_token", "", $cookieOpts);
+    login_json(0, '已安全退出');
 }
-elseif(isset($islogin) && $islogin == 1){
-    @header('Location: index.php');
+// ========== 已登录态访问登录页 → 前端 JS 跳转（禁止 header Location）==========
+elseif(isset($islogin) && $islogin == 1) {
+    echo '<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><title>跳转中</title></head><body><script>window.location.href="index.php";</script></body></html>';
     exit;
 }
 ?>
@@ -183,7 +215,6 @@ body { overflow: auto; background: #0f172a; }
     <div class="login-subtitle">请使用您的管理员账号登录系统</div>
 
     <form method="post" id="loginForm">
-      <input type="hidden" name="csrf_token" value="<?php echo csrf_token();?>">
       <div class="login-input-wrap">
         <i class="mdi mdi-account-outline"></i>
         <input type="text" class="form-control" id="user" name="user" placeholder="请输入用户名" required autofocus>
@@ -214,18 +245,36 @@ function toast(type, msg, timer){
     }
 }
 document.getElementById('loginForm').addEventListener('submit', function(e) {
+    e.preventDefault(); // 始终阻止默认提交，走 AJAX（禁止整页刷新）
     var u = document.getElementById('user').value.trim();
     var p = document.getElementById('pass').value.trim();
     if (!u || !p) {
-        e.preventDefault();
         toast('warning', '请填写完整的用户名和密码！', 3000);
+        return;
     }
+    var btn = this.querySelector('.btn-login');
+    var oldHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="mdi mdi-loading mdi-spin"></i> 登录中...';
+    var fd = new FormData(this);
+    fd.append('action', 'login');
+    fetch('login.php', {method: 'POST', body: fd, credentials: 'same-origin', headers:{'X-CSRF-Token':'<?php echo csrf_token();?>'}})
+      .then(function(r){ return r.json(); })
+      .then(function(res){
+          if(res.code === 0) {
+              window.location.href = 'index.php';
+          } else {
+              toast('error', res.msg, 3000);
+              btn.disabled = false;
+              btn.innerHTML = oldHtml;
+          }
+      })
+      .catch(function(){
+          toast('error', '网络错误，请重试！', 3000);
+          btn.disabled = false;
+          btn.innerHTML = oldHtml;
+      });
 });
 </script>
-<?php if($toast_msg): ?>
-<script>
-toast(<?php echo json_encode($toast_type);?>, <?php echo json_encode($toast_msg, JSON_UNESCAPED_UNICODE);?>, 3000);
-</script>
-<?php endif; ?>
 </body>
 </html>

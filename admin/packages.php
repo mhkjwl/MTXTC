@@ -3,7 +3,7 @@
  * @file packages.php
  * @description 套餐管理页面，支持创建/编辑/删除用户套餐，配置等级权重、存储配额、有效天数及接口分组绑定
  * @author AI
- * @version 1.1.0
+ * @version 1.1.0-dev
  * @date 2026-08-04
  */
 declare(strict_types=1);
@@ -72,15 +72,29 @@ if(isset($_POST['action'])) {
         if($storageMB < -1 || $storageMB == 0) json_exit(1, '存储大小必须大于0或为-1（无限制）');
         if($days < 0) json_exit(1, '有效天数不能为负数');
         if(!in_array($isDefault, [0, 1])) json_exit(1, '默认参数错误');
+        // M12 修复：group_id > 0 时校验分组存在性，防止无效引用
+        if($groupId > 0) {
+            $grp = pkg_safe_get_row_prepared($DB, "SELECT id FROM eecms_api_groups WHERE id=?", 'i', [$groupId]);
+            if(!$grp) json_exit(1, '所选接口分组不存在');
+        }
 
-        // level 唯一性校验（含软删除记录，因DB有UNIQUE约束）
-        $dup = pkg_safe_get_row_prepared($DB, "SELECT id FROM eecms_packages WHERE level=?", 'i', [$level]);
+        // level 唯一性校验（M3 修复：仅检查启用记录，软删除已将 level 置为负值释放占用）
+        $dup = pkg_safe_get_row_prepared($DB, "SELECT id FROM eecms_packages WHERE level=? AND status=1", 'i', [$level]);
         if($dup) json_exit(1, '等级权重 ' . $level . ' 已被使用，请更换');
 
         $storageBytes = ($storageMB == -1) ? -1 : $storageMB * 1048576;
 
         $newId = $DB->insert_prepared("INSERT INTO eecms_packages (name, level, storage_limit, days, group_id, is_default, status) VALUES (?, ?, ?, ?, ?, ?, 1)", 'siiiii', [$name, $level, $storageBytes, $days, $groupId, $isDefault]);
-        if(!$newId) json_exit(1, '创建失败：' . $DB->error());
+        // H15 修复：不返回 DB error 详情，避免泄露表结构
+        if(!$newId) {
+            $dbErr = $DB->error();
+            error_log('[packages] 创建套餐失败：' . $dbErr);
+            // 检测 UNIQUE 约束冲突
+            if(strpos($dbErr, 'Duplicate') !== false || strpos($dbErr, '1062') !== false) {
+                json_exit(1, '等级权重 ' . $level . ' 已被使用，请更换');
+            }
+            json_exit(1, '套餐创建失败，请重试');
+        }
 
         // is_default=1 时取消其他默认
         if($isDefault == 1) {
@@ -108,12 +122,17 @@ if(isset($_POST['action'])) {
         if($storageMB < -1 || $storageMB == 0) json_exit(1, '存储大小必须大于0或为-1（无限制）');
         if($days < 0) json_exit(1, '有效天数不能为负数');
         if(!in_array($isDefault, [0, 1])) json_exit(1, '默认参数错误');
+        // M12 修复：编辑时同样校验 group_id 存在性
+        if($groupId > 0) {
+            $grp = pkg_safe_get_row_prepared($DB, "SELECT id FROM eecms_api_groups WHERE id=?", 'i', [$groupId]);
+            if(!$grp) json_exit(1, '所选接口分组不存在');
+        }
 
         $exists = pkg_safe_get_row_prepared($DB, "SELECT id FROM eecms_packages WHERE id=? AND status=1", 'i', [$id]);
         if(!$exists) json_exit(1, '套餐不存在');
 
-        // level 唯一性校验（排除自身）
-        $dup = pkg_safe_get_row_prepared($DB, "SELECT id FROM eecms_packages WHERE level=? AND id != ?", 'ii', [$level, $id]);
+        // level 唯一性校验（M3 修复：排除自身且仅检查启用记录）
+        $dup = pkg_safe_get_row_prepared($DB, "SELECT id FROM eecms_packages WHERE level=? AND id != ? AND status=1", 'ii', [$level, $id]);
         if($dup) json_exit(1, '等级权重 ' . $level . ' 已被使用，请更换');
 
         $storageBytes = ($storageMB == -1) ? -1 : $storageMB * 1048576;
@@ -147,7 +166,8 @@ if(isset($_POST['action'])) {
         $usageCount = pkg_safe_count_prepared($DB, "SELECT COUNT(*) FROM eecms_user_subs WHERE package_id=? AND expire_time > ?", 'is', [$id, $now]);
         if($usageCount > 0) json_exit(1, '该套餐有 ' . $usageCount . ' 个用户正在使用，无法删除');
 
-        pkg_safe_query_prepared($DB, "UPDATE eecms_packages SET status=0 WHERE id=?", 'i', [$id]);
+        // M3 修复：软删除时将 level 置为负值（-id），释放原 level 以便复用，同时满足 DB UNIQUE 约束
+        pkg_safe_query_prepared($DB, "UPDATE eecms_packages SET status=0, level=-ABS(?) WHERE id=?", 'ii', [$id, $id]);
         log_admin_action($DB, 'delete', 'package', $id, ['name' => $pkg['name']]);
         json_exit(0, '套餐「' . $pkg['name'] . '」已删除');
     }
@@ -299,11 +319,13 @@ if(isset($_POST['action'])) {
   </div>
 </div>
 
-<script defer src="style/js/jquery.min.js"></script>
-<script defer src="style/js/bootstrap.min.js"></script>
-<script defer src="style/js/sweetalert2.min.js"></script>
+<script src="style/js/jquery.min.js"></script>
+<script src="style/js/bootstrap.min.js"></script>
+<script src="style/js/sweetalert2.min.js"></script>
 <script>
 var CSRF_TOKEN = '<?php echo csrf_token();?>';
+// M5 修复：CSRF Token 统一通过 Header 传递，不再放 POST Body
+$.ajaxSetup({ beforeSend: function(xhr){ xhr.setRequestHeader('X-CSRF-Token', CSRF_TOKEN); } });
 var pkgModal;
 var _groupsCache = [];
 var _packagesCache = [];
@@ -312,6 +334,17 @@ window.addEventListener('DOMContentLoaded', function(){
     pkgModal = new bootstrap.Modal(document.getElementById('pkgModal'));
     loadGroups();
     loadPackages();
+
+    // H8 修复：事件委托替代内联 onclick，避免字符串拼接导致 XSS
+    $('#pkgTableBody').on('click', '.act-edit-pkg', function(){
+        var id = parseInt($(this).data('id'), 10);
+        if(!isNaN(id)) openEdit(id);
+    });
+    $('#pkgTableBody').on('click', '.act-delete-pkg', function(){
+        var id = parseInt($(this).data('id'), 10);
+        var name = $(this).data('name') || '';
+        if(!isNaN(id)) deletePackage(id, name);
+    });
 });
 
 function escHtml(str){
@@ -349,7 +382,7 @@ function loadPackages(){
         url: 'packages.php',
         type: 'POST',
         dataType: 'json',
-        data: { action: 'list', csrf_token: CSRF_TOKEN },
+        data: { action: 'list' },
         success: function(res){
             if(res.code === 0){
                 renderTable(res.data);
@@ -390,11 +423,11 @@ function renderTable(data){
         var groupText = p.group_name ? escHtml(p.group_name) : '<span class="text-muted">未绑定</span>';
 
         var actions = '<div class="btn-group btn-group-sm">';
-        actions += '<button type="button" class="btn btn-outline-primary" onclick="openEdit(' + p.id + ')" title="编辑"><i class="mdi mdi-pencil"></i></button>';
+        actions += '<button type="button" class="btn btn-outline-primary act-edit-pkg" data-id="' + p.id + '" title="编辑"><i class="mdi mdi-pencil"></i></button>';
         if(p.is_default == 1){
             actions += '<button type="button" class="btn btn-outline-secondary" disabled title="默认套餐不可删除"><i class="mdi mdi-delete"></i></button>';
         } else {
-            actions += '<button type="button" class="btn btn-outline-danger" onclick="deletePackage(' + p.id + ',\'' + escHtml(p.name).replace(/'/g,"\\'") + '\')" title="删除"><i class="mdi mdi-delete"></i></button>';
+            actions += '<button type="button" class="btn btn-outline-danger act-delete-pkg" data-id="' + p.id + '" data-name="' + escHtml(p.name) + '" title="删除"><i class="mdi mdi-delete"></i></button>';
         }
         actions += '</div>';
 
@@ -417,7 +450,7 @@ function loadGroups(callback){
         url: 'packages.php',
         type: 'POST',
         dataType: 'json',
-        data: { action: 'get_groups', csrf_token: CSRF_TOKEN },
+        data: { action: 'get_groups' },
         success: function(res){
             if(res.code === 0){
                 _groupsCache = res.data || [];
@@ -472,7 +505,6 @@ function savePackage(){
     var id = $('#pkgId').val();
     var data = {
         action: id ? 'update' : 'create',
-        csrf_token: CSRF_TOKEN,
         name: $('#pkgName').val().trim(),
         level: $('#pkgLevel').val(),
         storage_limit: $('#pkgStorage').val(),
@@ -531,7 +563,7 @@ function deletePackage(id, name){
         if(result.isConfirmed){
             $.ajax({
                 url: 'packages.php', type: 'POST', dataType: 'json',
-                data: { action: 'delete', id: id, csrf_token: CSRF_TOKEN },
+                data: { action: 'delete', id: id },
                 success: function(res){
                     if(res.code === 0){
                         toast('success', res.msg);

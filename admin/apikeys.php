@@ -1,17 +1,17 @@
 <?php
-declare(strict_types=1);
 /**
  * 后台 - API 密钥管理
  *
  * @file        admin/apikeys.php
  * @description 展示全站所有用户的 API 密钥，支持按用户名/状态搜索
- *              操作：查看详情、重新生成（明文仅返回一次）、删除、启用/禁用
+ *              操作：重新生成（明文仅返回一次）、删除、启用/禁用
  *              安全：DB 只存 SHA-256 哈希，管理员无法查看历史明文（与 GitHub Token 一致）
  * @author      eecms
  * @version     1.1.0-dev
  * @date        2026-08-04
  * @see         docs/AI开发规范.md § 5.4（API 数据传输）、§ 6（敏感操作二次确认）
  */
+declare(strict_types=1);
 ini_set("display_errors", 0);
 require('../inc/lang.php');
 require('../inc/common.php');
@@ -58,23 +58,7 @@ if(isset($_POST['action'])) {
         ak_json(0, 'ok', ['list' => $list, 'total' => count($list)]);
     }
 
-    // ----- 查看详情（仅展示前缀/状态/时间，明文不可还原） -----
-    if($action === 'detail') {
-        $id = (int)($_POST['id'] ?? 0);
-        if($id <= 0) ak_json(1, '参数错误');
-        $row = api_key_get_by_id_admin($DB, $id);
-        if(!$row) ak_json(1, '密钥不存在');
-        ak_json(0, 'ok', [
-            'id'           => (int)$row['id'],
-            'user_id'      => (int)$row['user_id'],
-            'username'     => $row['username'] ? $row['username'] : '(已删除用户)',
-            'name'         => $row['name'],
-            'key_prefix'   => $row['key_prefix'],
-            'status'       => (int)$row['status'],
-            'last_used_at' => $row['last_used_at'],
-            'created_at'   => $row['created_at'],
-        ]);
-    }
+    // L4 修复：移除 detail 死代码接口（前端已无调用，硬约束要求"无查看按钮"）
 
     // ----- 重新生成（明文仅返回一次） -----
     if($action === 'regen') {
@@ -109,6 +93,8 @@ if(isset($_POST['action'])) {
         $id     = (int)($_POST['id'] ?? 0);
         $status = (int)($_POST['status'] ?? 0);
         if($id <= 0) ak_json(1, '参数错误');
+        // M14 修复：status 必须是 0 或 1，防止写入非法值
+        if(!in_array($status, [0, 1], true)) ak_json(1, '状态参数错误');
         $existing = api_key_get_by_id_admin($DB, $id);
         if(!$existing) ak_json(1, '密钥不存在');
         $ok = api_key_set_status_admin($DB, $id, $status);
@@ -269,7 +255,7 @@ function loadList(){
     var u = $.trim($('#fUsername').val());
     var s = $('#fStatus').val();
     $('#akTableBody').html('<tr><td colspan="8" class="text-center text-muted py-5"><i class="mdi mdi-loading mdi-spin"></i> 加载中...</td></tr>');
-    $.post('apikeys.php?action=list', {action:'list', username:u, status:s}, function(res){
+    $.post('apikeys.php', {action:'list', username:u, status:s}, function(res){
         if(res.code !== 0){ Swal.fire('错误', res.msg, 'error'); return; }
         var list = res.data.list || [];
         $('#totalCount').text(list.length);
@@ -316,7 +302,7 @@ function regen(id){
         confirmButtonColor:'#f59e0b'
     }).then(function(r){
         if(!r.isConfirmed) return;
-        $.post('apikeys.php?action=regen', {action:'regen', id:id}, function(res){
+        $.post('apikeys.php', {action:'regen', id:id}, function(res){
             if(res.code !== 0){ Swal.fire('失败', res.msg, 'error'); return; }
             currentPlainKey = res.data.api_key;
             $('#plainKeyBox').text(currentPlainKey);
@@ -346,7 +332,7 @@ function del(id){
         confirmButtonColor:'#ef4444'
     }).then(function(r){
         if(!r.isConfirmed) return;
-        $.post('apikeys.php?action=delete', {action:'delete', id:id}, function(res){
+        $.post('apikeys.php', {action:'delete', id:id}, function(res){
             if(res.code !== 0){ Swal.fire('失败', res.msg, 'error'); return; }
             Swal.fire({title:'已删除', icon:'success', timer:1200, showConfirmButton:false});
             loadList();
@@ -363,7 +349,7 @@ function toggle(id, status){
         confirmButtonText:'确认', cancelButtonText:'取消', reverseButtons:true
     }).then(function(r){
         if(!r.isConfirmed) return;
-        $.post('apikeys.php?action=toggle', {action:'toggle', id:id, status:status}, function(res){
+        $.post('apikeys.php', {action:'toggle', id:id, status:status}, function(res){
             if(res.code !== 0){ Swal.fire('失败', res.msg, 'error'); return; }
             Swal.fire({title:res.msg, icon:'success', timer:1200, showConfirmButton:false});
             loadList();
@@ -377,7 +363,7 @@ function copyPlain(){
     var ta = document.createElement('textarea');
     ta.value = currentPlainKey;
     document.body.appendChild(ta); ta.select();
-    try{ document.execCommand('copy'); Swal.fire({title:'已复制', icon:'success', timer:1000, showConfirmButton:false}); }
+    try{ document.execCommand('copy'); Swal.fire({title:'已复制', icon:'success', timer:1200, showConfirmButton:false}); }
     catch(e){ Swal.fire('提示','请手动选择密钥复制','info'); }
     document.body.removeChild(ta);
 }

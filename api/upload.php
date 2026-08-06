@@ -3,7 +3,7 @@
  * @file api/upload.php
  * @description 统一上传中转入口，按数字索引映射到对应图床适配器
  * @author AI
- * @version 1.1.0
+ * @version 1.1.0-dev
  * @date 2026-08-04
  */
 declare(strict_types=1);
@@ -29,15 +29,8 @@ if(!$perm['allowed']) {
     exit;
 }
 
-// 图床 key 白名单（与 index.php $apiConfig 数组顺序一致）
-$allowedApis = [
-    'cfbed','360','local','chevereto','zhongzhuan','phototourl','img520','imgloc',
-    'locimg','jisu','yopngs','feria','gurl','ljpic','nickyam','dogimg','matu',
-    'pnglog','lvse','fatcat','131img','feimg','yootn','czl','tutu','uuimg',
-    'tuwu','urusai','imgcc','imgdata','pngcdn','naixiai','yiyunt','scdn','imgbb',
-    'imgurla','helloimg','stardots','remit','alibaba','beeimg','meituan','suning',
-    'meipai','alipay','youzan','wentian',
-];
+// 图床 key 白名单（统一配置源，与 index.php / api/api_upload.php 共用 get_api_config()）
+$allowedApis = array_keys(get_api_config());
 
 // S3 存储：前端同时传递 s3_id 参数
 $s3Id = isset($_POST['s3_id']) ? $_POST['s3_id'] : null;
@@ -57,6 +50,24 @@ if ($s3Id !== null && ctype_digit($s3Id)) {
         elseif (ctype_digit($apiParam) && isset($allowedApis[(int)$apiParam])) {
             $uploadApiType = $allowedApis[(int)$apiParam];
         }
+    }
+}
+
+// ========== 接口启用状态校验（服务端硬拦截，尽早 fail）==========
+// 校验顺序与 api/api_upload.php 一致：接口启用 → 套餐权限 → 配额
+// 后台已关闭的接口（api_<key>_enable != 1 / S3 enabled != 1）一律禁止上传
+// unknown 类型跳过此校验，由下方「确定目标文件」处拦截返回参数错误
+if ($s3Id !== null && ctype_digit($s3Id)) {
+    if (!is_s3_config_enabled($conf, (int)$s3Id)) {
+        header("Content-type:application/json");
+        echo json_encode(["code" => 201, "msg" => "该存储接口已被管理员关闭"]);
+        exit;
+    }
+} elseif ($uploadApiType !== 'unknown') {
+    if (!is_api_enabled($conf, $uploadApiType)) {
+        header("Content-type:application/json");
+        echo json_encode(["code" => 201, "msg" => "该上传接口已被管理员关闭"]);
+        exit;
     }
 }
 

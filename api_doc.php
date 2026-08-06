@@ -27,7 +27,6 @@ $apiConfig = [
     'chevereto'=>['name'=>'PlcGO图床','max_size'=>10],
     'zhongzhuan'=>['name'=>'凌云图床','max_size'=>10],
     'phototourl'=>['name'=>'PHOTO图床','max_size'=>10],
-    'img520'=>['name'=>'IMG520图床','max_size'=>10],
     'imgloc'=>['name'=>'IMGLOC图床','max_size'=>10],
     'locimg'=>['name'=>'LOC图床','max_size'=>10],
     'jisu'=>['name'=>'极速图床','max_size'=>3],
@@ -68,6 +67,12 @@ $apiConfig = [
     'alipay'=>['name'=>'支付宝图床','max_size'=>10],
     'youzan'=>['name'=>'有赞图床','max_size'=>10],
     'wentian'=>['name'=>'WENTIAN','max_size'=>5],
+    'imgw'=>['name'=>'图网图床','max_size'=>30],
+    'xwyue'=>['name'=>'星跃图床','max_size'=>20],
+    'keye'=>['name'=>'珂艺云图床','max_size'=>100],
+    'shaitu'=>['name'=>'晒图床','max_size'=>10],
+    'guaigua'=>['name'=>'乖乖图床','max_size'=>10],
+    'imgtolink'=>['name'=>'LINK图床','max_size'=>5],
 ];
 
 // ========== 认证检测：Session 或 Bearer Token ==========
@@ -464,7 +469,7 @@ curl_setopt($ch, CURLOPT_POSTFIELDS, [
     'api'  => '360',
 ]);
 $response = curl_exec($ch);
-curl_close($ch);
+unset($ch);
 
 $result = json_decode($response, true);
 if ($result['code'] === 200) {

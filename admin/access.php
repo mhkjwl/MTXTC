@@ -50,11 +50,8 @@ if(isset($_POST['action']) && $_POST['action'] === 'save') {
         'guest_hide_local' => (string)$guestHideLocal,
     ];
     foreach($configs as $key => $val) {
-        // 先查是否存在，不存在则 INSERT，存在则 UPDATE（预处理语句）；检查返回值确保写入成功
-        $exists = $DB->get_row_prepared("SELECT name FROM eecms_config WHERE name=?", 's', [$key]);
-        $ok = !$exists
-            ? $DB->query_prepared("INSERT INTO eecms_config SET `name`=?,`main`=?", 'ss', [$key, $val])
-            : $DB->query_prepared("UPDATE eecms_config SET `main`=? WHERE `name`=?", 'ss', [$val, $key]);
+        // L9 修复：改用 INSERT ... ON DUPLICATE KEY UPDATE 消除查-插竞态
+        $ok = $DB->query_prepared("INSERT INTO eecms_config SET `name`=?,`main`=? ON DUPLICATE KEY UPDATE `main`=?", 'sss', [$key, $val, $val]);
         if($ok === false) json_exit(1, '配置保存失败，请重试！');
     }
 
@@ -222,7 +219,6 @@ unset($g);
               <button type="button" class="btn btn-primary" onclick="saveConfig()"><i class="mdi mdi-content-save"></i> 保存配置</button>
             </div>
             <input type="hidden" name="action" value="save">
-            <input type="hidden" name="csrf_token" value="<?php echo csrf_token();?>">
           </form>
         </div>
       </div>
@@ -313,9 +309,11 @@ unset($g);
 </div>
 
 <script src="style/js/jquery.min.js"></script>
-<script defer src="style/js/sweetalert2.min.js"></script>
+<script src="style/js/sweetalert2.min.js"></script>
 <script>
 var CSRF_TOKEN = '<?php echo csrf_token();?>';
+// M5 修复：CSRF Token 统一通过 Header 传递，不再放 POST Body
+$.ajaxSetup({ beforeSend: function(xhr){ xhr.setRequestHeader('X-CSRF-Token', CSRF_TOKEN); } });
 
 // 轻提示（toast）
 function toast(type, msg, timer){

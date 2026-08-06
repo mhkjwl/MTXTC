@@ -507,6 +507,66 @@ case 'package_info':
     ]);
     exit;
 
+// ========== 获取所有套餐列表（套餐购买页面用） ==========
+case 'packages_list':
+    if(!$isUserLoggedIn) {
+        echo json_encode(['code' => 1, 'msg' => '请先登录']);
+        exit;
+    }
+    $allPackages = get_all_packages($DB);
+    // 预查各分组接口数量，避免 N+1 查询
+    $groupApiCounts = [];
+    $countRows = pkg_safe_get_all($DB, "SELECT group_id, COUNT(*) AS cnt FROM eecms_api_group_items GROUP BY group_id");
+    foreach($countRows as $cr) {
+        $groupApiCounts[(int)$cr['group_id']] = (int)$cr['cnt'];
+    }
+    $list = [];
+    foreach($allPackages as $pkg) {
+        $storageBytes = (int)$pkg['storage_limit'];
+        $days = (int)$pkg['days'];
+        $groupId = (int)$pkg['group_id'];
+        // 格式化存储大小
+        if($storageBytes == -1) {
+            $storageText = '无限制';
+        } elseif($storageBytes >= 1073741824) {
+            $storageText = round($storageBytes / 1073741824, 2) . ' GB';
+        } else {
+            $storageText = round($storageBytes / 1048576) . ' MB';
+        }
+        // 格式化有效天数
+        $daysText = $days == 0 ? '永久' : $days . ' 天';
+        // 接口数量
+        $apiCount = isset($groupApiCounts[$groupId]) ? $groupApiCounts[$groupId] : 0;
+        // 构造介绍文案
+        $features = [];
+        $features[] = $storageBytes == -1 ? '无限存储空间' : $storageText . ' 存储空间';
+        $features[] = $days == 0 ? '永久有效' : $daysText . ' 有效期';
+        if(!empty($pkg['group_name'])) {
+            $features[] = '接口分组：' . $pkg['group_name'] . '（' . $apiCount . ' 个图床接口）';
+        } else {
+            $features[] = '接口分组：全站接口';
+        }
+        $list[] = [
+            'id'            => (int)$pkg['id'],
+            'name'          => $pkg['name'],
+            'level'         => (int)$pkg['level'],
+            'storage_limit' => $storageBytes,
+            'storage_text'  => $storageText,
+            'days'          => $days,
+            'days_text'     => $daysText,
+            'group_id'      => $groupId,
+            'group_name'    => $pkg['group_name'] ? $pkg['group_name'] : '',
+            'api_count'     => $apiCount,
+            'is_default'    => (int)$pkg['is_default'],
+            'features'      => $features,
+        ];
+    }
+    echo json_encode([
+        'code' => 0,
+        'data' => ['packages' => $list],
+    ]);
+    exit;
+
 // ========== 兑换码核销 ==========
 case 'redeem':
     if(!$isUserLoggedIn) {

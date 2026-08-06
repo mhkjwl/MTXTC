@@ -16,56 +16,8 @@ declare(strict_types=1);
     header('Pragma: no-cache');
     header('Expires: 0');
 
-    // ========== API 配置 ==========
-    $apiConfig = array(
-        'cfbed'=>array('name'=>'自建图床', 'max_size'=>100),
-        '360'=>array('name'=>'360图床', 'max_size'=>10),
-        'local'=>array('name'=>'本地上传', 'max_size'=>10),
-        'chevereto'=>array('name'=>'PlcGO图床', 'max_size'=>10),
-        'zhongzhuan'=>array('name'=>'凌云图床', 'max_size'=>10),
-        'phototourl'=>array('name'=>'PHOTO图床', 'max_size'=>10),
-        'img520'=>array('name'=>'IMG520图床', 'max_size'=>10),
-        'imgloc'=>array('name'=>'IMGLOC图床', 'max_size'=>10),
-        'locimg'=>array('name'=>'LOC图床', 'max_size'=>10),
-        'jisu'=>array('name'=>'极速图床', 'max_size'=>3),
-        'yopngs'=>array('name'=>'有图床', 'max_size'=>10),
-        'feria'=>array('name'=>'风筝图床', 'max_size'=>10),
-        'gurl'=>array('name'=>'Telegraph图床', 'max_size'=>5),
-        'ljpic'=>array('name'=>'云间图床', 'max_size'=>3),
-        'nickyam'=>array('name'=>'Telegraph2图床', 'max_size'=>5),
-        'dogimg'=>array('name'=>'狗狗图床', 'max_size'=>10),
-        'matu'=>array('name'=>'宝马图床', 'max_size'=>10),
-        'pnglog'=>array('name'=>'盘络图床', 'max_size'=>5),
-        'lvse'=>array('name'=>'绿色图床', 'max_size'=>5),
-        'fatcat'=>array('name'=>'肥喵图床', 'max_size'=>10),
-        '131img'=>array('name'=>'131图床', 'max_size'=>20),
-        'feimg'=>array('name'=>'FE图床', 'max_size'=>64),
-        'yootn'=>array('name'=>'友藤图床', 'max_size'=>20),
-        'czl'=>array('name'=>'CZL图床', 'max_size'=>0.5),
-        'tutu'=>array('name'=>'TUTU图床', 'max_size'=>5),
-        'uuimg'=>array('name'=>'悠悠图床', 'max_size'=>4997),
-        'tuwu'=>array('name'=>'图屋图床', 'max_size'=>20),
-        'urusai'=>array('name'=>'UR图床', 'max_size'=>64),
-        'imgcc'=>array('name'=>'云图床', 'max_size'=>10),
-        'imgdata'=>array('name'=>'ImgURL图床', 'max_size'=>10),
-        'pngcdn'=>array('name'=>'云朵图床', 'max_size'=>10),
-        'naixiai'=>array('name'=>'奶昔图床', 'max_size'=>10),
-        'yiyunt'=>array('name'=>'怡云图床', 'max_size'=>10),
-        'scdn'=>array('name'=>'SCDN图床', 'max_size'=>20),
-        'imgbb'=>array('name'=>'ImgBB图床', 'max_size'=>32),
-        'imgurla'=>array('name'=>'Imgur.LA图床', 'max_size'=>10),
-        'helloimg'=>array('name'=>'Hello图床', 'max_size'=>10),
-        'stardots'=>array('name'=>'StarDots图床', 'max_size'=>10),
-        'remit'=>array('name'=>'Remit图床', 'max_size'=>10),
-        'alibaba'=>array('name'=>'阿里巴巴图床', 'max_size'=>10),
-        'beeimg'=>array('name'=>'蜜蜂图床', 'max_size'=>10),
-        'meituan'=>array('name'=>'美团创作图床', 'max_size'=>10),
-        'suning'=>array('name'=>'苏宁易购图床', 'max_size'=>10),
-        'meipai'=>array('name'=>'美拍网图床', 'max_size'=>10),
-        'alipay'=>array('name'=>'支付宝图床', 'max_size'=>10),
-        'youzan'=>array('name'=>'有赞图床', 'max_size'=>10),
-        'wentian'=>array('name'=>'WENTIAN', 'max_size'=>5),
-    );
+    // ========== API 配置（统一配置源，消除三处硬编码） ==========
+    $apiConfig = get_api_config();
 
     $defaultApi = isset($conf['api_default']) ? $conf['api_default'] : '';
     $defaultValid = false;
@@ -415,6 +367,17 @@ declare(strict_types=1);
         <span>防盗链</span>
         <span>WebP</span>
       </div>
+
+      <?php if(!empty($siteEmail)): ?>
+      <div class="contact-card soft-card">
+        <div class="section-caption">联系我们</div>
+        <div class="contact-email" onclick="copyContactEmail('<?php echo htmlspecialchars($siteEmail, ENT_QUOTES); ?>')">
+          <i class="mdi mdi-email-outline"></i>
+          <span><?php echo htmlspecialchars($siteEmail); ?></span>
+          <i class="mdi mdi-content-copy contact-copy-icon"></i>
+        </div>
+      </div>
+      <?php endif; ?>
     </aside>
 
     <main class="main-content">
@@ -672,6 +635,22 @@ var csrfToken = '<?php echo function_exists("csrf_token") ? csrf_token() : ""; ?
 
 // ===== 全局工具 =====
 function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// 复制联系邮箱到剪贴板
+function copyContactEmail(email) {
+  var icon = event.currentTarget.querySelector('.contact-copy-icon');
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(email).then(function() {
+      if (icon) { icon.className = 'mdi mdi-check contact-copy-icon'; }
+      setTimeout(function() { if (icon) { icon.className = 'mdi mdi-content-copy contact-copy-icon'; } }, 1500);
+    });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = email; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); if (icon) { icon.className = 'mdi mdi-check contact-copy-icon'; } setTimeout(function() { if (icon) { icon.className = 'mdi mdi-content-copy contact-copy-icon'; } }, 1500); } catch(e) {}
+    document.body.removeChild(ta);
+  }
+}
 function escAttr(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 // L3: URL 协议白名单校验，防止 javascript:/vbscript:/data: 等 URL 注入
 function safeUrl(url) {
@@ -962,7 +941,6 @@ uploadBtn.addEventListener('click', function() {
     var file = files[idx];
     var fd = new FormData();
     fd.append('file', file);
-    fd.append('csrf_token', csrfToken);
     if (isS3) { fd.append('s3_id', opt.dataset.s3id); }
     else { fd.append('api', apiKey); }
 
@@ -970,7 +948,8 @@ uploadBtn.addEventListener('click', function() {
     progressDetail.textContent = file.name;
     progressBar.style.width = ((idx / files.length) * 100) + '%';
 
-    fetch(url, { method: 'POST', body: fd })
+    // F1 修复：CSRF token 改用 X-CSRF-Token Header 传递（与 M5 修复模式一致，不再放 Body）
+    fetch(url, { method: 'POST', body: fd, headers: { 'X-CSRF-Token': csrfToken } })
       .then(function(res) {
         if (!res.ok) {
           return res.text().then(function(t) {
@@ -1056,8 +1035,8 @@ function recordStats(successCnt, failCnt) {
   var fd = new FormData();
   fd.append('success', successCnt);
   fd.append('fail', failCnt);
-  fd.append('csrf_token', csrfToken);
-  fetch('./api/stats.php', { method: 'POST', body: fd })
+  // F1 修复：CSRF token 改用 X-CSRF-Token Header 传递（与 M5 修复模式一致，不再放 Body）
+  fetch('./api/stats.php', { method: 'POST', body: fd, headers: { 'X-CSRF-Token': csrfToken } })
     .then(function(r) { return r.json(); })
     .then(function(d) { if (d.status) updateStatDisplay(d); }).catch(function() {});
 }

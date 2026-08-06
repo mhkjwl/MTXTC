@@ -78,6 +78,16 @@ if(defined('SQLITE')==true){
 			if($sth === false) return false;
 			return $sth; // PDOStatement 可直接 fetch 遍历
 		}
+		// —— 事务支持（PDO 版） ——
+		function begin_transaction(){
+			return (bool)$this->link->beginTransaction();
+		}
+		function commit(){
+			return (bool)$this->link->commit();
+		}
+		function rollback(){
+			return (bool)$this->link->rollBack();
+		}
 		function escape($str){
 			return $str;
 		}
@@ -254,6 +264,18 @@ elseif(extension_loaded('mysqli') && $nomysqli==false) {
 			if($result === false) return false;
 			return $result;
 		}
+		// ============================================================
+		// 事务支持（mysqli 版）—— 用于保证「先删后插」等复合操作的原子性
+		// ============================================================
+		function begin_transaction(){
+			return (bool)mysqli_begin_transaction($this->link);
+		}
+		function commit(){
+			return (bool)mysqli_commit($this->link);
+		}
+		function rollback(){
+			return (bool)mysqli_rollback($this->link);
+		}
 		function error(){
 			$error = mysqli_error($this->link);
 			$errno = mysqli_errno($this->link);
@@ -287,6 +309,9 @@ elseif(extension_loaded('mysqli') && $nomysqli==false) {
 		function query_prepared(string $sql, string $types = '', array $params = []) { return false; }
 		function insert_prepared(string $sql, string $types = '', array $params = []) { return false; }
 		function fetch_all_prepared(string $sql, string $types = '', array $params = []) { return false; }
+		function begin_transaction(){ return false; }
+		function commit(){ return false; }
+		function rollback(){ return false; }
 		function error(){ return 'mysqli扩展未安装'; }
 		function close(){ return true; }
 	}

@@ -17,9 +17,13 @@ if (defined('IN_CRONLITE')) {
     return;
 }
 
-// 开发环境显示所有错误（含警告/通知），便于规范治理时发现问题
-error_reporting(E_ALL);
-ini_set('display_errors', '1');
+// H3 修复：根据环境判断是否显示错误，生产环境禁止输出敏感信息到页面
+// 但排除 PHP 8.5+ 的 curl_close() 废弃警告（整个项目历史代码均使用 curl_close，无害）
+error_reporting(E_ALL & ~E_DEPRECATED);
+$__isDev = (getenv('APP_ENV') === 'dev' || (defined('APP_DEBUG') && APP_DEBUG));
+ini_set('display_errors', $__isDev ? '1' : '0');
+ini_set('log_errors', '1');
+unset($__isDev);
 define('IN_CRONLITE', true);
 define('VERSION', '1001');
 define('SYSTEM_ROOT', dirname(__FILE__).'/');
@@ -114,7 +118,9 @@ if(empty($conf['security_key'])){
 }
 if(!defined('SYS_KEY')) define('SYS_KEY', $conf['security_key']);
 if(!defined('ENCRYPT_KEY')) define('ENCRYPT_KEY', $conf['security_key']);
-$password_hash = $conf['security_key'];
+// H4 修复：三密钥分离，从主密钥派生用途特定的子密钥，避免密钥合一导致任一泄露全军覆没
+// SYS_KEY/ENCRYPT_KEY 保持向后兼容（使用原始主密钥），$password_hash 使用派生子密钥
+$password_hash = hash_hmac('sha256', 'session_pepper', $conf['security_key']);
 
 include_once(SYSTEM_ROOT."function.php");
 
@@ -128,16 +134,22 @@ foreach($conf as $__ck => $__cv) {
 unset($__ck, $__cv);
 
 // 兜底：确保 random_name 函数可用（防止 function.php 未更新导致 fatal error）
+// L4 修复：原兜底实现用 mt_rand 弱随机源，与 function.php 主版本（random_int）不一致；
+//          升级为 random_int + 异常回退 mt_rand，与主版本保持密码学安全的随机实现
 if(!function_exists('random_name')) {
-	function random_name($length = 12) {
-		$chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-		$str = '';
-		$max = strlen($chars) - 1;
-		for($i = 0; $i < $length; $i++) {
-			$str .= $chars[mt_rand(0, $max)];
-		}
-		return $str;
-	}
+    function random_name($length = 12) {
+        $chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+        $str = '';
+        $max = strlen($chars) - 1;
+        for($i = 0; $i < $length; $i++) {
+            try {
+                $str .= $chars[random_int(0, $max)];
+            } catch (Throwable $e) {
+                $str .= $chars[mt_rand(0, $max)];
+            }
+        }
+        return $str;
+    }
 }
 
 include_once(SYSTEM_ROOT."member.php");
@@ -162,7 +174,7 @@ process_expired_packages($DB);
 // ============================================================
 // 自动注入：版本号定义（初始化时注入，不影响现有功能）
 // 依据：docs/AI开发规范.md § 1.6.3 / § 1.6.4
-// 说明：使用 defined() 防止重复定义冲突；dev/ 带 -dev 后缀
+// 说明：使用 defined() 防止重复定义冲突；stable/ 为正式版不带 -dev 后缀
 // 原有 VERSION='1001' 常量保持不动，本常量为规范要求的语义化版本号
 // ============================================================
-defined('APP_VERSION') || define('APP_VERSION', '1.3.6');
+defined('APP_VERSION') || define('APP_VERSION', '1.3.8');

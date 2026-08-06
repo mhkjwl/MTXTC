@@ -3,7 +3,7 @@
  * @file api/131img.php
  * @description 131图床上传适配器（img.131213.xyz）- 适配新版 API（/api/v1/uploads + 客户端内容检测）
  * @author AI
- * @version 1.2.0
+ * @version 1.2.0-dev
  * @date 2026-08-04
  */
 declare(strict_types=1);
@@ -112,7 +112,7 @@ curl_setopt_array($ch, [
 $uploadimg = curl_exec($ch);
 $curlErr = curl_error($ch);
 $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-curl_close($ch);
+unset($ch);
 @unlink($filepath);
 
 if ($uploadimg === false || $uploadimg === '') {

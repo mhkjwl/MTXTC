@@ -121,6 +121,11 @@ if(!isset($islogin) || $islogin!=1) exit("<script>location.href='login.php';</sc
             <i class="mdi mdi-shield-lock-outline"></i><span>访问控制</span>
           </a>
         </li>
+        <li class="nav-item">
+          <a class="ct-open-tab" href="changelog.php">
+            <i class="mdi mdi-history"></i><span>更新日志</span>
+          </a>
+        </li>
       </ul>
     </nav>
     <div class="admin-sidebar-footer">
@@ -151,7 +156,7 @@ if(!isset($islogin) || $islogin!=1) exit("<script>location.href='login.php';</sc
           <ul class="dropdown-menu dropdown-menu-end">
             <li><a class="dropdown-item ct-open-tab" data-url="user.php" href="javascript:void(0)"><i class="mdi mdi-account-outline"></i>修改信息</a></li>
             <li class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="login.php?logout"><i class="mdi mdi-logout-variant"></i>退出登录</a></li>
+            <li><a class="dropdown-item" href="javascript:void(0)" id="adminLogoutBtn"><i class="mdi mdi-logout-variant"></i>退出登录</a></li>
           </ul>
         </div>
       </div>
@@ -181,11 +186,47 @@ if(!isset($islogin) || $islogin!=1) exit("<script>location.href='login.php';</sc
 </div>
 
 <!-- JS -->
-<script defer src="style/js/jquery.min.js"></script>
-<script defer src="style/js/popper.min.js"></script>
-<script defer src="style/js/bootstrap.min.js"></script>
-<script defer src="style/js/perfect-scrollbar.min.js"></script>
-<script defer src="style/js/jquery.cookie.min.js"></script>
-<script defer src="style/js/index.min.js?v=20260802d"></script>
+<script src="style/js/jquery.min.js"></script>
+<script src="style/js/popper.min.js"></script>
+<script src="style/js/bootstrap.min.js"></script>
+<script src="style/js/sweetalert2.min.js"></script>
+<script src="style/js/perfect-scrollbar.min.js"></script>
+<script src="style/js/jquery.cookie.min.js"></script>
+<script src="style/js/index.min.js?v=20260802d"></script>
+<script>
+// 登出：POST + CSRF（禁止 GET 触发写操作，防止 CSRF 登出攻击）
+// 注意：上方外部 JS 均带 defer，内联脚本执行时 jQuery 尚未加载，
+// 故使用原生 JS（fetch + addEventListener），不依赖 $
+// M18 修复：退出登录增加二次确认（硬约束要求危险操作必须二次确认）
+document.getElementById('adminLogoutBtn').addEventListener('click', function(){
+    if(typeof Swal === 'undefined'){
+        // Swal 未加载时的降级：直接执行登出
+        doLogout();
+        return;
+    }
+    Swal.fire({
+        title: '确认退出登录？',
+        text: '退出后需要重新输入账号密码登录',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: '确认退出',
+        cancelButtonText: '取消',
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#94a3b8',
+        reverseButtons: true
+    }).then(function(result){
+        if(result.isConfirmed) doLogout();
+    });
+});
+function doLogout(){
+    var fd = new FormData();
+    fd.append('action', 'logout');
+    // M5 修复：CSRF Token 通过 Header 传递
+    fetch('login.php', {method:'POST', body:fd, credentials:'same-origin', headers:{'X-CSRF-Token':'<?php echo csrf_token();?>'}})
+      .then(function(r){ return r.json(); })
+      .then(function(){ window.location.href = 'login.php'; })
+      .catch(function(){ window.location.href = 'login.php'; });
+}
+</script>
 </body>
 </html>

@@ -69,7 +69,7 @@ if ($fileSize <= 20 * 1024 * 1024) {
         CURLOPT_HTTPHEADER => $headers,
     ]);
     $uploadimg = curl_exec($ch); $curlErr = curl_error($ch); $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+    unset($ch);
     @unlink($filepath);
 } else {
     // 分片上传（20MB/片）
@@ -81,7 +81,7 @@ if ($fileSize <= 20 * 1024 * 1024) {
     curl_setopt_array($ch, [CURLOPT_URL => $endpoint . '&initChunked=true', CURLOPT_POST => true, CURLOPT_POSTFIELDS => ['originalFileName' => $file, 'originalFileType' => $fileType, 'totalChunks' => (string)$totalChunks], CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 30, CURLOPT_SSL_VERIFYPEER => is_file(dirname(__DIR__)."/inc/cacert.pem"),
     CURLOPT_SSL_VERIFYHOST => is_file(dirname(__DIR__)."/inc/cacert.pem") ? 2 : 0,
     CURLOPT_CAINFO => dirname(__DIR__)."/inc/cacert.pem", CURLOPT_HTTPHEADER => $headers]);
-    $initResp = curl_exec($ch); curl_close($ch);
+    $initResp = curl_exec($ch); unset($ch);
     $initData = json_decode($initResp, true);
     $uploadId = $initData['uploadId'] ?? ($initData['sessionInfo']['uploadId'] ?? '');
     if (empty($uploadId)) { @unlink($filepath); echo json_encode(["code" => 201, "msg" => "分块初始化失败"]); exit; }
@@ -97,7 +97,7 @@ if ($fileSize <= 20 * 1024 * 1024) {
         curl_setopt_array($ch, [CURLOPT_URL => $endpoint . '&chunked=true', CURLOPT_POST => true, CURLOPT_POSTFIELDS => ['file' => new CURLFile($chunkFile, 'application/octet-stream'), 'uploadId' => $uploadId, 'chunkIndex' => (string)$i, 'totalChunks' => (string)$totalChunks, 'originalFileName' => $file, 'originalFileType' => $fileType], CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 120, CURLOPT_SSL_VERIFYPEER => is_file(dirname(__DIR__)."/inc/cacert.pem"),
     CURLOPT_SSL_VERIFYHOST => is_file(dirname(__DIR__)."/inc/cacert.pem") ? 2 : 0,
     CURLOPT_CAINFO => dirname(__DIR__)."/inc/cacert.pem", CURLOPT_HTTPHEADER => $headers]);
-        curl_exec($ch); curl_close($ch);
+        curl_exec($ch); unset($ch);
         @unlink($chunkFile);
     }
     fclose($fp);
@@ -107,7 +107,7 @@ if ($fileSize <= 20 * 1024 * 1024) {
     curl_setopt_array($ch, [CURLOPT_URL => $endpoint . '&chunked=true&merge=true', CURLOPT_POST => true, CURLOPT_POSTFIELDS => ['uploadId' => $uploadId, 'totalChunks' => (string)$totalChunks, 'originalFileName' => $file, 'originalFileType' => $fileType], CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 300, CURLOPT_SSL_VERIFYPEER => is_file(dirname(__DIR__)."/inc/cacert.pem"),
     CURLOPT_SSL_VERIFYHOST => is_file(dirname(__DIR__)."/inc/cacert.pem") ? 2 : 0,
     CURLOPT_CAINFO => dirname(__DIR__)."/inc/cacert.pem", CURLOPT_HTTPHEADER => $headers]);
-    $uploadimg = curl_exec($ch); $curlErr = curl_error($ch); $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+    $uploadimg = curl_exec($ch); $curlErr = curl_error($ch); $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); unset($ch);
     @unlink($filepath);
 }
 

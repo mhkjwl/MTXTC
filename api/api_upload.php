@@ -73,7 +73,8 @@ if(!$keyInfo) {
 api_key_touch($DB, (int)$keyInfo['id']);
 
 // ========== 加载用户信息并注入全局（使下游套餐校验、图片记录逻辑一致） ==========
-$apiKeyUser = $DB->get_row('SELECT * FROM eecms_users WHERE id = ' . intval($keyInfo['user_id']));
+// U1 修复：原用 intval() 字符串拼接 SQL，违反 § 8.3.4，改用 get_row_prepared
+$apiKeyUser = $DB->get_row_prepared('SELECT * FROM eecms_users WHERE id = ?', 'i', [(int)$keyInfo['user_id']]);
 if(!$apiKeyUser || (int)$apiKeyUser['status'] !== 1) {
     http_response_code(403);
     api_upload_json(403, '密钥所属账户已被禁用或不存在');
@@ -83,57 +84,9 @@ $currentUserId   = (int)$apiKeyUser['id'];
 $currentUser     = $apiKeyUser;
 $currentUserRole = $apiKeyUser['role'];
 
-// ========== 图床接口配置（与 index.php $apiConfig 一致） ==========
+// ========== 图床接口配置（统一配置源，与 index.php / api/upload.php 共用 get_api_config()） ==========
 // 每个图床接口的唯一标识即为此数组的 key（如 cfbed / 360 / local）
-$apiConfig = [
-    'cfbed'=>['name'=>'自建图床','max_size'=>100],
-    '360'=>['name'=>'360图床','max_size'=>10],
-    'local'=>['name'=>'本地上传','max_size'=>10],
-    'chevereto'=>['name'=>'PlcGO图床','max_size'=>10],
-    'zhongzhuan'=>['name'=>'凌云图床','max_size'=>10],
-    'phototourl'=>['name'=>'PHOTO图床','max_size'=>10],
-    'img520'=>['name'=>'IMG520图床','max_size'=>10],
-    'imgloc'=>['name'=>'IMGLOC图床','max_size'=>10],
-    'locimg'=>['name'=>'LOC图床','max_size'=>10],
-    'jisu'=>['name'=>'极速图床','max_size'=>3],
-    'yopngs'=>['name'=>'有图床','max_size'=>10],
-    'feria'=>['name'=>'风筝图床','max_size'=>10],
-    'gurl'=>['name'=>'Telegraph图床','max_size'=>5],
-    'ljpic'=>['name'=>'云间图床','max_size'=>3],
-    'nickyam'=>['name'=>'Telegraph2图床','max_size'=>5],
-    'dogimg'=>['name'=>'狗狗图床','max_size'=>10],
-    'matu'=>['name'=>'宝马图床','max_size'=>10],
-    'pnglog'=>['name'=>'盘络图床','max_size'=>5],
-    'lvse'=>['name'=>'绿色图床','max_size'=>5],
-    'fatcat'=>['name'=>'肥喵图床','max_size'=>10],
-    '131img'=>['name'=>'131图床','max_size'=>20],
-    'feimg'=>['name'=>'FE图床','max_size'=>64],
-    'yootn'=>['name'=>'友藤图床','max_size'=>20],
-    'czl'=>['name'=>'CZL图床','max_size'=>0.5],
-    'tutu'=>['name'=>'TUTU图床','max_size'=>5],
-    'uuimg'=>['name'=>'悠悠图床','max_size'=>4997],
-    'tuwu'=>['name'=>'图屋图床','max_size'=>20],
-    'urusai'=>['name'=>'UR图床','max_size'=>64],
-    'imgcc'=>['name'=>'云图床','max_size'=>10],
-    'imgdata'=>['name'=>'ImgURL图床','max_size'=>10],
-    'pngcdn'=>['name'=>'云朵图床','max_size'=>10],
-    'naixiai'=>['name'=>'奶昔图床','max_size'=>10],
-    'yiyunt'=>['name'=>'怡云图床','max_size'=>10],
-    'scdn'=>['name'=>'SCDN图床','max_size'=>20],
-    'imgbb'=>['name'=>'ImgBB图床','max_size'=>32],
-    'imgurla'=>['name'=>'Imgur.LA图床','max_size'=>10],
-    'helloimg'=>['name'=>'Hello图床','max_size'=>10],
-    'stardots'=>['name'=>'StarDots图床','max_size'=>10],
-    'remit'=>['name'=>'Remit图床','max_size'=>10],
-    'alibaba'=>['name'=>'阿里巴巴图床','max_size'=>10],
-    'beeimg'=>['name'=>'蜜蜂图床','max_size'=>10],
-    'meituan'=>['name'=>'美团创作图床','max_size'=>10],
-    'suning'=>['name'=>'苏宁易购图床','max_size'=>10],
-    'meipai'=>['name'=>'美拍网图床','max_size'=>10],
-    'alipay'=>['name'=>'支付宝图床','max_size'=>10],
-    'youzan'=>['name'=>'有赞图床','max_size'=>10],
-    'wentian'=>['name'=>'WENTIAN','max_size'=>5],
-];
+$apiConfig = get_api_config();
 
 // ========== GET 请求：返回当前用户可用的图床接口列表 ==========
 // API 用户可通过 GET /api/api_upload.php 查询可用接口标识，用于 POST 上传时传 api 参数
@@ -346,16 +299,15 @@ $__recordCallback = function($buffer) use (&$__urlRecorded, $uploadFilename, $up
         }
 
         // ===== 同步全站累计统计（与 api/stats.php POST 逻辑一致）=====
-        // 确保 eecms_upload_daily 表存在（累计统计，不因图片删除而减少）
-        $DB->query("CREATE TABLE IF NOT EXISTS eecms_upload_daily (
-            stat_date DATE PRIMARY KEY,
-            upload_count INT NOT NULL DEFAULT 0
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-
+        // U2 修复：移除每次上传都执行的 CREATE TABLE IF NOT EXISTS，依赖 stats.php/install 已建表
         $__todayDate  = date('Y-m-d');
 
-        // 累计总成功数 +1
-        $DB->query("INSERT INTO eecms_config SET `name`='upload_total_ok',`main`='1' ON DUPLICATE KEY UPDATE `main` = CAST(`main` AS UNSIGNED) + 1");
+        // 累计总成功数 +1（U3：改用 query_prepared，原字符串拼接违反 § 8.3.4）
+        $DB->query_prepared(
+            "INSERT INTO eecms_config SET `name`='upload_total_ok',`main`=? ON DUPLICATE KEY UPDATE `main` = CAST(`main` AS UNSIGNED) + ?",
+            'ii',
+            [1, 1]
+        );
 
         // 今日成功数 +1（含跨天翻页处理）
         $__dateRow    = $DB->get_row("SELECT `main` FROM eecms_config WHERE `name`='upload_today_date'");
@@ -366,9 +318,17 @@ $__recordCallback = function($buffer) use (&$__urlRecorded, $uploadFilename, $up
                 'ss',
                 [$__todayDate, $__todayDate]
             );
-            $DB->query("INSERT INTO eecms_config SET `name`='upload_today_ok',`main`='1' ON DUPLICATE KEY UPDATE `main`='1'");
+            $DB->query_prepared(
+                "INSERT INTO eecms_config SET `name`='upload_today_ok',`main`=? ON DUPLICATE KEY UPDATE `main`=?",
+                'ii',
+                [1, 1]
+            );
         } else {
-            $DB->query("INSERT INTO eecms_config SET `name`='upload_today_ok',`main`='1' ON DUPLICATE KEY UPDATE `main` = CAST(`main` AS UNSIGNED) + 1");
+            $DB->query_prepared(
+                "INSERT INTO eecms_config SET `name`='upload_today_ok',`main`=? ON DUPLICATE KEY UPDATE `main` = CAST(`main` AS UNSIGNED) + ?",
+                'ii',
+                [1, 1]
+            );
         }
 
         // 每日累计统计 +1（趋势图数据源）
@@ -392,6 +352,36 @@ $__recordCallback = function($buffer) use (&$__urlRecorded, $uploadFilename, $up
     }
 
     // ===== 统一失败响应 =====
+    // U4 修复：原失败路径不上报 fail 计数，导致 API 上传失败不计入 upload_total_fail/upload_today_fail
+    //         前端路径通过 JS 调 stats.php 上报 fail，API 路径须在此对等补全
+    global $DB;
+    $__todayDate = date('Y-m-d');
+    $DB->query_prepared(
+        "INSERT INTO eecms_config SET `name`='upload_total_fail',`main`=? ON DUPLICATE KEY UPDATE `main` = CAST(`main` AS UNSIGNED) + ?",
+        'ii',
+        [1, 1]
+    );
+    $__dateRow    = $DB->get_row("SELECT `main` FROM eecms_config WHERE `name`='upload_today_date'");
+    $__storedDate = ($__dateRow && isset($__dateRow['main'])) ? $__dateRow['main'] : '';
+    if ($__storedDate !== $__todayDate) {
+        $DB->query_prepared(
+            "INSERT INTO eecms_config SET `name`='upload_today_date',`main`=? ON DUPLICATE KEY UPDATE `main`=?",
+            'ss',
+            [$__todayDate, $__todayDate]
+        );
+        $DB->query_prepared(
+            "INSERT INTO eecms_config SET `name`='upload_today_fail',`main`=? ON DUPLICATE KEY UPDATE `main`=?",
+            'ii',
+            [1, 1]
+        );
+    } else {
+        $DB->query_prepared(
+            "INSERT INTO eecms_config SET `name`='upload_today_fail',`main`=? ON DUPLICATE KEY UPDATE `main` = CAST(`main` AS UNSIGNED) + ?",
+            'ii',
+            [1, 1]
+        );
+    }
+
     $failMsg = $upstreamMsg !== '' ? $upstreamMsg : '上传失败，请稍后重试';
     return json_encode([
         'code' => 500,

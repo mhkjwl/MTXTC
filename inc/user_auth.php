@@ -31,7 +31,8 @@ if(isset($_COOKIE['user_token'])) {
             $row = $DB->get_row_prepared("SELECT * FROM eecms_users WHERE id = ? AND status = 1", 'i', [$uid]);
             if($row) {
                 $sv = isset($row['session_version']) ? (int)$row['session_version'] : 0;
-                $expectedSession = md5($row['id'].$row['password'].$password_hash.$sv);
+                // H6 修复：会话令牌改用 hash_hmac('sha256')，与管理员端一致，禁止 MD5
+                $expectedSession = hash_hmac('sha256', $row['id'].'|'.$row['password'].'|'.$sv, $password_hash);
                 if(hash_equals($expectedSession, $session)) {
                     $isUserLoggedIn  = true;
                     $currentUserId   = (int)$row['id'];
@@ -57,11 +58,20 @@ function user_login($userId, $password) {
     // 用 SELECT * 并 isset 检查，兼容旧表可能缺失 session_version 列的情况
     $userRow = $DB->get_row_prepared("SELECT * FROM eecms_users WHERE id = ?", 'i', [$userId]);
     $sessionVersion = ($userRow && isset($userRow['session_version'])) ? (int)$userRow['session_version'] : 0;
-    $session = md5($userId.$password.$password_hash.$sessionVersion);
+    // H6 修复：会话令牌改用 hash_hmac('sha256')，与验证端一致
+    $session = hash_hmac('sha256', $userId.'|'.$password.'|'.$sessionVersion, $password_hash);
     $token = authcode($userId."\t".$session, 'ENCODE', SYS_KEY);
     $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ||
                (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
-    setcookie('user_token', $token, time() + 604800, '/', '', $isHttps, true);
+    // M24 修复：user_token Cookie 增加 SameSite 属性，与 admin_token 一致
+    setcookie('user_token', $token, [
+        'expires'  => time() + 604800,
+        'path'     => '/',
+        'domain'   => '',
+        'secure'   => $isHttps,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
 }
 
 /**
@@ -70,7 +80,14 @@ function user_login($userId, $password) {
 function user_logout() {
     $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ||
                (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
-    setcookie('user_token', '', time() - 604800, '/', '', $isHttps, true);
+    setcookie('user_token', '', [
+        'expires'  => time() - 604800,
+        'path'     => '/',
+        'domain'   => '',
+        'secure'   => $isHttps,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
 }
 
 /**
@@ -348,7 +365,14 @@ function ensure_user_tables($DB) {
     // 创建验证码表
     ensure_email_codes_table($DB);
 
-    // 如果用户表为空，创建默认超级管理员（使用站点管理员账号密码）
+    // 如果用户表为空，创建默认超级管理员
+    // H16 修复：独立管理员密码设置流程，避免直接复用 admin_pwd 配置值
+    // 原问题：admin_pwd 可能是 MD5/SHA1 哈希，password_hash() 会再次哈希该哈希字符串，
+    //         导致用户表中的密码无法被任何已知明文验证，超级管理员永久无法登录用户系统
+    // 修复策略：
+    //   1. 仅当 admin_pwd 已是 bcrypt 哈希时才直接复用（管理员用同一明文密码登录两套系统）
+    //   2. 否则生成密码学安全的随机强密码，明文写入一次性密钥文件（dev/logs/，权限 0600），
+    //      供管理员首次读取登录后立即删除；不写入 error_log（遵循 H11 约束）
     try {
         $cnt = (int)$DB->count("SELECT COUNT(*) FROM eecms_users");
     } catch(Throwable $e) {
@@ -357,15 +381,37 @@ function ensure_user_tables($DB) {
     if($cnt == 0) {
         global $conf;
         $adminUser = isset($conf['admin_user']) ? $conf['admin_user'] : 'admin';
-        // 安全规范 § 8.4.3：禁止使用弱密码兜底，未配置时生成随机强密码并记录到日志
-        if(isset($conf['admin_pwd']) && $conf['admin_pwd'] !== '') {
-            $adminPwd = $conf['admin_pwd'];
+        $storedPwd = isset($conf['admin_pwd']) ? (string)$conf['admin_pwd'] : '';
+        $isBcrypt  = (strpos($storedPwd, '$2y$') === 0);
+        $isArgon2  = (strpos($storedPwd, '$argon2') === 0);
+
+        if($isBcrypt || $isArgon2) {
+            // admin_pwd 已是现代哈希格式 → 直接复用（管理员用同一明文密码登录两套系统）
+            $hash = $storedPwd;
         } else {
-            try { $adminPwd = bin2hex(random_bytes(8)); }
-            catch (Throwable $e) { $adminPwd = substr(md5(uniqid((string)mt_rand(), true)), 0, 16); }
-            error_log('[eecms] 自动生成管理员密码（未配置 admin_pwd）：用户=' . $adminUser . ' 密码=' . $adminPwd . ' 请登录后立即修改');
+            // admin_pwd 为空或为 MD5/SHA1 等旧格式 → 无法反推明文，生成独立随机密码
+            try { $plainPwd = bin2hex(random_bytes(10)); }
+            catch (Throwable $e) { $plainPwd = bin2hex(random_bytes(10)); }
+            $hash = password_hash($plainPwd, PASSWORD_DEFAULT);
+            // 将明文写入一次性密钥文件（非日志，权限 0600），管理员读取后应立即删除
+            $keyFile = ROOT . 'logs' . DIRECTORY_SEPARATOR . 'superadmin_initial_password.txt';
+            $keyDir  = dirname($keyFile);
+            if(!is_dir($keyDir)) { @mkdir($keyDir, 0700, true); }
+            // 文件内容包含用户名、明文密码、生成时间、删除提示
+            $content = "EECMS 超级管理员初始密码（一次性，登录后请立即删除本文件并修改密码）\n"
+                     . "生成时间：" . date('Y-m-d H:i:s') . "\n"
+                     . "用户名：" . $adminUser . "\n"
+                     . "初始密码：" . $plainPwd . "\n"
+                     . "安全提示：\n"
+                     . "  1. 请尽快登录用户中心并修改密码\n"
+                     . "  2. 修改密码后立即删除本文件\n"
+                     . "  3. 本文件权限应为 0600，仅服务器管理员可读\n";
+            @file_put_contents($keyFile, $content, LOCK_EX);
+            @chmod($keyFile, 0600);
+            // 仅记录事件提示，不包含明文密码（遵循 H11 约束）
+            error_log('[eecms] 已为超级管理员生成随机初始密码，明文已写入 ' . $keyFile . '，请及时登录并修改密码后删除该文件');
+            unset($plainPwd, $content);
         }
-        $hash = (strpos($adminPwd, '$2y$') === 0) ? $adminPwd : password_hash($adminPwd, PASSWORD_DEFAULT);
         // 预处理语句插入管理员（§ 8.3.4）
         try {
             $DB->query_prepared(

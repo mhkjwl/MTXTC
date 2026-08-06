@@ -3,7 +3,7 @@
  * @file index.php
  * @description 用户中心仪表盘，上传管理图片、修改密码、查看统计
  * @author AI
- * @version 1.3.6
+ * @version 1.3.6-dev
  * @date 2026-08-05
  */
 declare(strict_types=1);
@@ -24,55 +24,9 @@ if(!$isUserLoggedIn) {
     exit;
 }
 
-// ========== 图床配置（与主站 index.php 一致） ==========
-$apiConfig = array(
-    'cfbed'=>array('name'=>'自建图床', 'max_size'=>100),
-    '360'=>array('name'=>'360图床', 'max_size'=>10),
-    'local'=>array('name'=>'本地上传', 'max_size'=>10),
-    'chevereto'=>array('name'=>'PlcGO图床', 'max_size'=>10),
-    'zhongzhuan'=>array('name'=>'凌云图床', 'max_size'=>10),
-    'phototourl'=>array('name'=>'PHOTO图床', 'max_size'=>10),
-    'imgloc'=>array('name'=>'IMGLOC图床', 'max_size'=>10),
-    'locimg'=>array('name'=>'LOC图床', 'max_size'=>10),
-    'jisu'=>array('name'=>'极速图床', 'max_size'=>3),
-    'yopngs'=>array('name'=>'有图床', 'max_size'=>10),
-    'feria'=>array('name'=>'风筝图床', 'max_size'=>10),
-    'gurl'=>array('name'=>'Telegraph图床', 'max_size'=>5),
-    'ljpic'=>array('name'=>'云间图床', 'max_size'=>3),
-    'nickyam'=>array('name'=>'Telegraph2图床', 'max_size'=>5),
-    'dogimg'=>array('name'=>'狗狗图床', 'max_size'=>10),
-    'matu'=>array('name'=>'宝马图床', 'max_size'=>10),
-    'pnglog'=>array('name'=>'盘络图床', 'max_size'=>5),
-    'lvse'=>array('name'=>'绿色图床', 'max_size'=>5),
-    'fatcat'=>array('name'=>'肥喵图床', 'max_size'=>10),
-    '131img'=>array('name'=>'131图床', 'max_size'=>20),
-    'feimg'=>array('name'=>'FE图床', 'max_size'=>64),
-    'yootn'=>array('name'=>'友藤图床', 'max_size'=>20),
-    'czl'=>array('name'=>'CZL图床', 'max_size'=>0.5),
-    'tutu'=>array('name'=>'TUTU图床', 'max_size'=>5),
-    'uuimg'=>array('name'=>'悠悠图床', 'max_size'=>4997),
-    'tuwu'=>array('name'=>'图屋图床', 'max_size'=>20),
-    'urusai'=>array('name'=>'UR图床', 'max_size'=>64),
-    'imgcc'=>array('name'=>'云图床', 'max_size'=>10),
-    'imgdata'=>array('name'=>'ImgURL图床', 'max_size'=>10),
-    'pngcdn'=>array('name'=>'云朵图床', 'max_size'=>10),
-    'naixiai'=>array('name'=>'奶昔图床', 'max_size'=>10),
-    'yiyunt'=>array('name'=>'怡云图床', 'max_size'=>10),
-    'scdn'=>array('name'=>'SCDN图床', 'max_size'=>20),
-    'imgbb'=>array('name'=>'ImgBB图床', 'max_size'=>32),
-    'imgurla'=>array('name'=>'Imgur.LA图床', 'max_size'=>10),
-    'helloimg'=>array('name'=>'Hello图床', 'max_size'=>10),
-    'stardots'=>array('name'=>'StarDots图床', 'max_size'=>10),
-    'remit'=>array('name'=>'Remit图床', 'max_size'=>10),
-    'alibaba'=>array('name'=>'阿里巴巴图床', 'max_size'=>10),
-    'beeimg'=>array('name'=>'蜜蜂图床', 'max_size'=>10),
-    'meituan'=>array('name'=>'美团创作图床', 'max_size'=>10),
-    'suning'=>array('name'=>'苏宁易购图床', 'max_size'=>10),
-    'meipai'=>array('name'=>'美拍网图床', 'max_size'=>10),
-    'alipay'=>array('name'=>'支付宝图床', 'max_size'=>10),
-    'youzan'=>array('name'=>'有赞图床', 'max_size'=>10),
-    'wentian'=>array('name'=>'WENTIAN', 'max_size'=>5),
-);
+// ========== 图床配置（统一配置源，与主站 index.php / api/upload.php 共用 get_api_config()） ==========
+// 修复：原硬编码缺失 imgw/xwyue/keye/shaitu/guaigua/imgtolink 6 个接口，用户中心无法选择这些图床
+$apiConfig = get_api_config();
 
 $defaultApi = isset($conf['api_default']) ? $conf['api_default'] : '';
 $defaultValid = false;
@@ -120,6 +74,14 @@ $userAvatar  = !empty($currentUser['avatar']) ? $currentUser['avatar'] : '';
 $userRole    = $currentUserRole;
 $isSuperAdmin = ($userRole === 'super_admin');
 $firstChar   = mb_substr($username, 0, 1, 'UTF-8');
+
+// 个人信息展示字段（用于 home-section 顶部 profile-card）
+$userEmail       = isset($currentUser['email']) && $currentUser['email'] !== '' ? $currentUser['email'] : '';
+$userCreatedAt   = isset($currentUser['created_at']) && $currentUser['created_at'] ? $currentUser['created_at'] : '';
+$userLastLogin   = isset($currentUser['last_login']) && $currentUser['last_login'] ? $currentUser['last_login'] : '';
+$userEmailDisplay = $userEmail !== '' ? htmlspecialchars($userEmail, ENT_QUOTES, 'UTF-8') : '未设置';
+$userCreatedText  = $userCreatedAt !== '' ? date('Y-m-d', strtotime($userCreatedAt)) : '-';
+$userLastLoginText = $userLastLogin !== '' ? date('Y-m-d H:i', strtotime($userLastLogin)) : '从未登录';
 
 // ========== 套餐接口过滤 ==========
 $allowedApiInfo = ['api_keys'=>[], 's3_ids'=>[]];
@@ -203,6 +165,17 @@ if(!$isSuperAdmin) {
       .menu-toggle{display:flex;align-items:center;justify-content:center}
       .sidebar{position:fixed;left:0;top:0;bottom:0;z-index:180;transform:translateX(-100%);transition:transform .3s ease;height:100vh}
       .sidebar.open{transform:translateX(0)}
+    }
+    /* 移动端：topbar-actions 允许换行 + profile-card 纵向 + stats-grid 2列 */
+    @media(max-width:768px){
+      .topbar-actions{flex-wrap:wrap;justify-content:flex-end;gap:8px}
+      .profile-card{flex-direction:column;text-align:center;gap:16px;padding:20px}
+      .profile-avatar{width:64px;height:64px;font-size:26px}
+      .profile-head{flex-direction:column;align-items:center;gap:12px}
+      .profile-name-row{justify-content:center}
+      .profile-meta{grid-template-columns:1fr 1fr;gap:10px 16px}
+      .profile-meta-item{justify-content:center;font-size:0.84rem}
+      .stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
     }
 
     /* Toast 通知 */
@@ -294,6 +267,24 @@ if(!$isSuperAdmin) {
     .result-link{display:flex;gap:10px;align-items:center;margin-top:8px}
     .result-link input{flex:1;padding:12px 16px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,0.8);font-family:"JetBrains Mono",monospace;font-size:0.88rem;color:var(--text)}
     .result-error{padding:18px;border-radius:18px;background:rgba(255,127,168,0.08);border:1px solid rgba(255,127,168,0.2);color:#e53e6b;margin-top:12px}
+
+    /* 个人信息卡片 */
+    .profile-card{display:flex;align-items:center;gap:24px;padding:24px 28px;margin-bottom:24px}
+    .profile-avatar-wrap{flex-shrink:0}
+    .profile-avatar{width:80px;height:80px;border-radius:50%;background:var(--gradient-main);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:32px;overflow:hidden;box-shadow:0 6px 18px rgba(123,140,255,0.25)}
+    .profile-avatar img{width:100%;height:100%;object-fit:cover}
+    .profile-info{flex:1;min-width:0}
+    .profile-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+    .profile-name-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    .profile-name{margin:0;font-size:1.4rem;font-weight:800;color:var(--text)}
+    .profile-pwd-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,0.7);color:var(--text);font-size:0.86rem;font-weight:600;cursor:pointer;transition:all .2s ease;flex-shrink:0}
+    [data-theme="dark"] .profile-pwd-btn{background:rgba(30,26,46,0.7)}
+    .profile-pwd-btn:hover{background:rgba(123,140,255,0.12);border-color:var(--primary);color:var(--primary)}
+    .profile-meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px 24px}
+    .profile-meta-item{display:flex;align-items:center;gap:8px;font-size:0.88rem;min-width:0}
+    .profile-meta-item i{color:var(--primary);font-size:18px;flex-shrink:0}
+    .profile-meta-label{color:var(--muted);flex-shrink:0}
+    .profile-meta-value{color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 
     /* 统计卡片 */
     .stat-card .stat-top{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-bottom:14px}
@@ -436,7 +427,7 @@ if(!$isSuperAdmin) {
     /* 头像 */
     .avatar-circle{width:40px;height:40px;border-radius:50%;background:var(--gradient-main);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:16px;overflow:hidden;flex-shrink:0}
     .avatar-circle img{width:100%;height:100%;object-fit:cover}
-    .role-badge{padding:3px 10px;border-radius:999px;font-size:0.74rem;font-weight:700}
+    .role-badge{padding:5px 12px;border-radius:999px;font-size:0.86rem;font-weight:700}
     .role-badge.admin{background:linear-gradient(135deg,#ff7fa8,#ff9d6c);color:#fff}
     .role-badge.user{background:linear-gradient(135deg,#67b7ff,#59e3ff);color:#fff}
 
@@ -560,8 +551,54 @@ if(!$isSuperAdmin) {
       </div>
       <?php endif; ?>
 
-      <!-- 首页聚合：统计 + 套餐 + 上传 -->
+      <!-- 首页聚合：个人信息 + 统计 + 套餐 + 上传 -->
       <section id="home-section" class="page-section">
+      <!-- 个人信息卡片 -->
+      <article class="profile-card soft-card" id="profileCard">
+        <div class="profile-avatar-wrap">
+          <div class="profile-avatar">
+            <?php if($userAvatar !== ''): ?>
+              <img src="<?php echo htmlspecialchars($userAvatar, ENT_QUOTES, 'UTF-8'); ?>" alt="<?php echo htmlspecialchars($username, ENT_QUOTES, 'UTF-8'); ?>">
+            <?php else: ?>
+              <span><?php echo htmlspecialchars($firstChar, ENT_QUOTES, 'UTF-8'); ?></span>
+            <?php endif; ?>
+          </div>
+        </div>
+        <div class="profile-info">
+          <div class="profile-head">
+            <div class="profile-name-row">
+              <h3 class="profile-name"><?php echo htmlspecialchars($username, ENT_QUOTES, 'UTF-8'); ?></h3>
+              <span class="role-badge <?php echo $isSuperAdmin ? 'admin' : 'user'; ?>"><?php echo $isSuperAdmin ? '超级管理员' : '普通用户'; ?></span>
+            </div>
+            <button type="button" class="profile-pwd-btn" id="profileChangePwdBtn" title="修改密码">
+              <i class="mdi mdi-lock-reset"></i> 修改密码
+            </button>
+          </div>
+          <div class="profile-meta">
+            <div class="profile-meta-item">
+              <i class="mdi mdi-email-outline"></i>
+              <span class="profile-meta-label">邮箱</span>
+              <span class="profile-meta-value"><?php echo $userEmailDisplay; ?></span>
+            </div>
+            <div class="profile-meta-item">
+              <i class="mdi mdi-package-variant-closed"></i>
+              <span class="profile-meta-label">套餐</span>
+              <span class="profile-meta-value" id="profilePkgName">-</span>
+            </div>
+            <div class="profile-meta-item">
+              <i class="mdi mdi-calendar-account-outline"></i>
+              <span class="profile-meta-label">注册时间</span>
+              <span class="profile-meta-value"><?php echo $userCreatedText; ?></span>
+            </div>
+            <div class="profile-meta-item">
+              <i class="mdi mdi-login-variant"></i>
+              <span class="profile-meta-label">最后登录</span>
+              <span class="profile-meta-value"><?php echo $userLastLoginText; ?></span>
+            </div>
+          </div>
+        </div>
+      </article>
+
       <!-- 统计卡片 -->
       <section class="stats-grid" id="stats-section">
         <article class="stat-card soft-card">
@@ -1060,9 +1097,9 @@ function switchSection(targetId, skipPush){
   if(targetId === 'pricing-section'){
     loadPricingSection();
   }
-  // 记忆当前 section，供 popstate / 首屏恢复使用
-  try { sessionStorage.setItem('user_current_section', targetId); } catch(e) {}
   // 同步 URL（不带 hash），用 pushState 便于浏览器前进/后退
+  // 注意：仅用 history.state 记忆 section，不用 sessionStorage
+  // 原因：history.state 跨页面跳转后丢失，重新进入用户中心时回到首页；页面内刷新时保留，仍能恢复当前 section
   if(!skipPush && history.pushState){
     history.pushState({section: targetId}, '', window.location.pathname + window.location.search);
   }
@@ -1155,23 +1192,19 @@ document.querySelectorAll('.side-nav a').forEach(function(item){
 // 监听 popstate（浏览器前进/后退导航，URL 不带 hash）
 window.addEventListener('popstate', function(e){
   var s = (e.state && e.state.section) ? e.state.section : null;
-  if(!s){ try { s = sessionStorage.getItem('user_current_section'); } catch(_) {} }
   if(!s || !document.getElementById(s)){ s = 'home-section'; }
   switchSection(s, true);
 });
 
-// 首屏初始化：优先 history.state，其次 sessionStorage，最后默认 home-section；URL 始终无 hash
+// 首屏初始化：仅用 history.state 恢复 section；URL 始终无 hash
+// history.state 跨页面跳转后丢失 → 从外部进入用户中心时回到首页
+// history.state 页面内刷新时保留 → 用户中心内部刷新仍能恢复当前 section
 (function initSection(){
   // 清理首屏可能残留的 hash（如旧链接分享带入）
   if(window.location.hash){
     history.replaceState(null, '', window.location.pathname + window.location.search);
   }
-  var section = null;
-  if(history.state && history.state.section){
-    section = history.state.section;
-  } else {
-    try { section = sessionStorage.getItem('user_current_section'); } catch(_) {}
-  }
+  var section = (history.state && history.state.section) ? history.state.section : null;
   if(!section || !document.getElementById(section)){
     section = 'home-section';
   }
@@ -1729,6 +1762,14 @@ document.getElementById('navChangePwd').addEventListener('click', function(e){
   e.preventDefault();
   document.getElementById('pwdModalOverlay').classList.add('show');
 });
+// 个人信息卡片内的修改密码按钮（复用同一弹窗）
+var profilePwdBtn = document.getElementById('profileChangePwdBtn');
+if(profilePwdBtn){
+  profilePwdBtn.addEventListener('click', function(e){
+    e.preventDefault();
+    document.getElementById('pwdModalOverlay').classList.add('show');
+  });
+}
 document.getElementById('pwdCancel').addEventListener('click', function(){
   document.getElementById('pwdModalOverlay').classList.remove('show');
   document.getElementById('pwdForm').reset();
@@ -1823,6 +1864,18 @@ function loadPackageInfo(){
       var statusBadge = document.getElementById('pkgStatusBadge');
 
       nameEl.textContent = info.package_name || '免费版';
+
+      // 同步填充个人信息卡的套餐名
+      var profilePkgEl = document.getElementById('profilePkgName');
+      if(profilePkgEl){
+        var pkgText = info.package_name || '免费版';
+        if(info.is_expired){
+          pkgText += '（已过期）';
+        } else if(info.level > 0){
+          pkgText += ' · VIP' + info.level;
+        }
+        profilePkgEl.textContent = pkgText;
+      }
 
       // 等级徽章
       badgeEl.className = 'pkg-level-badge';

@@ -22,7 +22,8 @@ declare(strict_types=1);
  * 核心规则：
  *   规则A（覆盖）：新套餐等级 > 当前 → 到期时间 = 当前时间 + 新套餐天数
  *   规则B（顺延）：新套餐等级 == 当前 → 到期时间 = 原到期 + 新套餐天数
- *   规则C（禁止降级）：新套餐等级 < 当前 → 拦截
+ *   规则B'（永久拦截）：当前套餐为永久且同级兑换 → 拦截（永久套餐无需续期）
+ *   规则C（禁止降级）：新套餐等级 < 当前 → 拦截（仅到期后自动降级或管理员强制）
  *   规则D（过期兜底）：当前套餐已过期 → 按规则A处理
  *   权限继承（并集）：VIP(N) 可用分组 = Level 1~N 所有绑定的接口并集
  */
@@ -467,6 +468,11 @@ function switch_user_package($DB, $userId, $newPackageId, $extraDays=0, $force=f
 
     // 规则B：同级 → 顺延
     if($newLevel == $currentLevel) {
+        // 永久套餐不允许同级兑换（再兑换也是无意义的，永久有效期无法顺延）
+        $isCurrentPermanent = !empty($currentExpire) && substr($currentExpire, 0, 4) >= '2099';
+        if($isCurrentPermanent) {
+            return ['ok'=>false, 'msg'=>'您已拥有该永久套餐，无需再次兑换，如需升级请兑换更高等级套餐'];
+        }
         $expireTime = $newDays > 0 ? date('Y-m-d H:i:s', strtotime($currentExpire . " +{$newDays} days")) : PKG_PERMANENT_EXPIRE;
         $sql = "UPDATE eecms_user_subs SET package_id=?, package_level=?, package_name=?, expire_time=? WHERE user_id=?";
         pkg_safe_query_prepared($DB, $sql, 'iissi', [$newPackageId, $newLevel, $newPkg['name'], $expireTime, $userId]);
@@ -501,11 +507,15 @@ function redeem_code($DB, $userId, $code) {
     $row = pkg_safe_get_row_prepared($DB, "SELECT * FROM eecms_redeem_codes WHERE code=?", 's', [$code]);
     if(!$row) return ['ok'=>false, 'msg'=>'兑换码不存在'];
 
-    // 检查是否已使用
-    if((int)$row['used_user_id'] > 0) return ['ok'=>false, 'msg'=>'该兑换码已被使用'];
+    // H8 修复：原子更新防止 TOCTOU 竞态，确保兑换码只能被使用一次
+    $now = date('Y-m-d H:i:s');
+    $affected = pkg_safe_query_prepared($DB, "UPDATE eecms_redeem_codes SET used_user_id=?, used_at=? WHERE id=? AND used_user_id=0", 'isi', [$userId, $now, (int)$row['id']]);
+    if(!$affected || $affected == 0) {
+        return ['ok'=>false, 'msg'=>'该兑换码已被使用或兑换失败'];
+    }
 
     // 检查是否过期
-    if($row['expires_at'] !== null && $row['expires_at'] < date('Y-m-d H:i:s')) {
+    if($row['expires_at'] !== null && $row['expires_at'] < $now) {
         return ['ok'=>false, 'msg'=>'该兑换码已过期'];
     }
 
@@ -519,10 +529,6 @@ function redeem_code($DB, $userId, $code) {
     // 执行套餐切换（走核心规则）
     $result = switch_user_package($DB, $userId, $targetPkg['id'], $extraDays);
     if(!$result['ok']) return $result;
-
-    // 标记兑换码已使用
-    $now = date('Y-m-d H:i:s');
-    pkg_safe_query_prepared($DB, "UPDATE eecms_redeem_codes SET used_user_id=?, used_at=? WHERE id=?", 'isi', [$userId, $now, (int)$row['id']]);
 
     return ['ok'=>true, 'msg'=>'兑换成功！' . $result['msg']];
 }
@@ -544,24 +550,37 @@ function generate_redeem_codes($DB, $targetPackageId, $count, $customDays=null, 
     $pkg = get_package($DB, $targetPackageId);
     if(!$pkg) return ['ok'=>false, 'msg'=>'目标套餐不存在', 'codes'=>[]];
 
-    $batchNo = date('YmdHis') . sprintf('%03d', mt_rand(0, 999));
+    $batchNo = date('YmdHis') . sprintf('%03d', random_int(0, 999));
     $codes = [];
     $customDaysVal = $customDays !== null ? (int)$customDays : null;
     $expiresVal = $expiresAt ?: null;
     $insertSql = "INSERT INTO eecms_redeem_codes (code, target_package_id, custom_days, expires_at, batch_no) VALUES (?, ?, ?, ?, ?)";
 
     for($i = 0; $i < $count; $i++) {
-        // 生成唯一码：大写字母+数字，16位
-        // PHP 8.5: uniqid() 第一个参数必须是 string，mt_rand() 返回 int 会导致 TypeError
-        $prefix = (string)mt_rand();
-        $code = strtoupper(substr(md5(uniqid($prefix, true) . microtime() . $i . $batchNo), 0, 4) .
-                           '-' . substr(md5(uniqid($prefix, true) . $batchNo . $i), 0, 4) .
-                           '-' . substr(md5(uniqid($prefix, true) . $i . $i), 0, 4) .
-                           '-' . substr(md5(uniqid($prefix, true) . $batchNo), 0, 4));
+        // H7 修复：使用 random_bytes 生成密码学安全的兑换码，禁止 md5/uniqid/mt_rand
+        // 格式：XXXX-XXXX-XXXX-XXXX（16位大写十六进制，64位熵）
+        $code = strtoupper(
+            bin2hex(random_bytes(2)) . '-' .
+            bin2hex(random_bytes(2)) . '-' .
+            bin2hex(random_bytes(2)) . '-' .
+            bin2hex(random_bytes(2))
+        );
 
         $affected = pkg_safe_query_prepared($DB, $insertSql, 'siiss', [$code, $targetPackageId, $customDaysVal, $expiresVal, $batchNo]);
         if($affected > 0) {
             $codes[] = $code;
+        } else {
+            // 碰撞时重试一次（M20 修复）
+            $code = strtoupper(
+                bin2hex(random_bytes(2)) . '-' .
+                bin2hex(random_bytes(2)) . '-' .
+                bin2hex(random_bytes(2)) . '-' .
+                bin2hex(random_bytes(2))
+            );
+            $affected = pkg_safe_query_prepared($DB, $insertSql, 'siiss', [$code, $targetPackageId, $customDaysVal, $expiresVal, $batchNo]);
+            if($affected > 0) {
+                $codes[] = $code;
+            }
         }
     }
 
@@ -754,7 +773,9 @@ function process_expired_packages($DB) {
     if($lastRun > 0 && (time() - $lastRun) < 3600) {
         return 0;
     }
-    $DB->query("INSERT INTO eecms_config (`name`, `main`) VALUES ('pkg_expire_last_run', '".time()."') ON DUPLICATE KEY UPDATE `main` = '".time()."'");
+    // H10 修复：改用预处理语句，禁止 SQL 拼接
+    $nowTs = (string)time();
+    $DB->query_prepared("INSERT INTO eecms_config (`name`, `main`) VALUES ('pkg_expire_last_run', ?) ON DUPLICATE KEY UPDATE `main` = ?", 'ss', [$nowTs, $nowTs]);
 
     $now = date('Y-m-d H:i:s');
     $defaultPkg = get_default_package($DB);

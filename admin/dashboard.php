@@ -34,7 +34,6 @@ $apiList = array(
     array('key' => 'meipai',     'name' => '美拍网图床',     'icon' => 'mdi-camera-outline',      'enable' => 'api_meipai_enable'),
     array('key' => 'alipay',     'name' => '支付宝图床',     'icon' => 'mdi-credit-card-outline',  'enable' => 'api_alipay_enable'),
     array('key' => 'phototourl', 'name' => 'PHOTO图床',     'icon' => 'mdi-camera-outline',       'enable' => 'api_phototourl_enable'),
-    array('key' => 'img520',     'name' => 'IMG520图床',    'icon' => 'mdi-image-multiple-outline','enable' => 'api_img520_enable'),
     array('key' => 'imgloc',     'name' => 'IMGLOC图床',    'icon' => 'mdi-image-outline',        'enable' => 'api_imgloc_enable'),
     array('key' => 'locimg',     'name' => 'LOC图床',       'icon' => 'mdi-map-marker-outline',   'enable' => 'api_locimg_enable'),
     array('key' => 'jisu',       'name' => '极速图床',      'icon' => 'mdi-speedometer',          'enable' => 'api_jisu_enable'),
@@ -62,6 +61,13 @@ $apiList = array(
     array('key' => 'naixiai',    'name' => '奶昔图床',      'icon' => 'mdi-cup-outline',          'enable' => 'api_naixiai_enable'),
     array('key' => 'youzan',     'name' => '有赞图床',      'icon' => 'mdi-storefront-outline',   'enable' => 'api_youzan_enable'),
     array('key' => 'wentian',    'name' => 'WENTIAN图床',   'icon' => 'mdi-cloud-outline',        'enable' => 'api_wentian_enable'),
+    // L1 修复：补齐 6 个新接入接口，原 $apiList 与 admin/api.php 不同步导致仪表盘统计遗漏
+    array('key' => 'imgw',       'name' => '图网图床',       'icon' => 'mdi-cloud-upload-outline', 'enable' => 'api_imgw_enable'),
+    array('key' => 'xwyue',      'name' => '星跃图床',       'icon' => 'mdi-cloud-upload',         'enable' => 'api_xwyue_enable'),
+    array('key' => 'keye',       'name' => '珂艺云图床',     'icon' => 'mdi-cloud-sync',           'enable' => 'api_keye_enable'),
+    array('key' => 'shaitu',     'name' => '晒图床',         'icon' => 'mdi-image-multiple',       'enable' => 'api_shaitu_enable'),
+    array('key' => 'guaigua',    'name' => '乖乖图床',       'icon' => 'mdi-emoticon-happy',       'enable' => 'api_guaigua_enable'),
+    array('key' => 'imgtolink',  'name' => 'LINK图床',       'icon' => 'mdi-link-variant',         'enable' => 'api_imgtolink_enable'),
 );
 
 $totalCount = count($apiList);
@@ -117,6 +123,7 @@ $pageList = array_slice($apiList, $start, $perPage);
 <link rel="preload" href="style/fonts/materialdesignicons-webfont.woff2?v=6.5.95" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style/css/bootstrap.min.css">
 <link rel="stylesheet" href="style/css/materialdesignicons.min.css">
+<link rel="stylesheet" href="style/css/sweetalert2.min.css">
 <link rel="stylesheet" href="style/css/admin.css">
 <style>html,body{height:100%;margin:0}body{overflow:auto}.admin-content{padding:16px 20px!important}</style>
 </head>
@@ -171,14 +178,14 @@ $pageList = array_slice($apiList, $start, $perPage);
     <div class="col-md-6 col-xl-3">
       <div class="stat-card stat-card-green">
         <div class="stat-icon"><i class="mdi mdi-check-circle-outline"></i></div>
-        <div class="stat-value"><?php echo $enabledCount; ?></div>
+        <div class="stat-value" id="statEnabled"><?php echo $enabledCount; ?></div>
         <div class="stat-label">已启用</div>
       </div>
     </div>
     <div class="col-md-6 col-xl-3">
       <div class="stat-card stat-card-red">
         <div class="stat-icon"><i class="mdi mdi-close-circle-outline"></i></div>
-        <div class="stat-value"><?php echo $disabledCount; ?></div>
+        <div class="stat-value" id="statDisabled"><?php echo $disabledCount; ?></div>
         <div class="stat-label">已关闭</div>
       </div>
     </div>
@@ -210,55 +217,12 @@ $pageList = array_slice($apiList, $start, $perPage);
                   <th style="width:100px;">操作</th>
                 </tr>
               </thead>
-              <tbody>
-                <?php $i = $start + 1; foreach ($pageList as $api): ?>
-                <tr>
-                  <td><?php echo $i++; ?></td>
-                  <td>
-                    <i class="mdi <?php echo $api['icon']; ?> me-2" style="color:#94a3b8;"></i>
-                    <strong><?php echo $api['name']; ?></strong>
-                  </td>
-                  <td>
-                    <?php if ($api['enabled']): ?>
-                    <span class="badge-status badge-status-on"><i class="mdi mdi-check"></i> 启用</span>
-                    <?php else: ?>
-                    <span class="badge-status badge-status-off"><i class="mdi mdi-close"></i> 关闭</span>
-                    <?php endif; ?>
-                  </td>
-                  <td>
-                    <?php if ($api['key'] === $defaultApi): ?>
-                    <i class="mdi mdi-star" style="color:#f59e0b;font-size:20px;"></i>
-                    <?php else: ?>
-                    <span style="color:#94a3b8;">-</span>
-                    <?php endif; ?>
-                  </td>
-                  <td>
-                    <div class="btn-group btn-group-sm">
-                    <?php if ($api['enabled']): ?>
-                      <button type="button" class="btn btn-warning btn-sm" onclick="toggleApi('<?php echo $api['enable']; ?>','<?php echo addslashes($api['name']); ?>','disable');return false;" title="禁用"><i class="mdi mdi-block-helper"></i></button>
-                    <?php else: ?>
-                      <button type="button" class="btn btn-success btn-sm" onclick="toggleApi('<?php echo $api['enable']; ?>','<?php echo addslashes($api['name']); ?>','enable');return false;" title="启用"><i class="mdi mdi-check"></i></button>
-                    <?php endif; ?>
-                    </div>
-                  </td>
-                </tr>
-                <?php endforeach; ?>
+              <tbody id="apiTableBody">
+                <tr><td colspan="5" class="text-center text-muted py-4"><i class="mdi mdi-loading mdi-spin"></i> 加载中...</td></tr>
               </tbody>
             </table>
           </div>
-          <?php if ($totalPages > 1): ?>
-          <div class="d-flex justify-content-center py-3">
-            <nav>
-              <ul class="pagination mb-0">
-                <li class="page-item <?php echo $page <= 1 ? 'disabled' : ''; ?>"><a class="page-link" style="cursor:pointer;" onclick="location.href='?page=<?php echo $page - 1; ?>';return false;" href="javascript:void(0)">上一页</a></li>
-                <?php for ($p = 1; $p <= $totalPages; $p++): ?>
-                <li class="page-item <?php echo $p === $page ? 'active' : ''; ?>"><a class="page-link" style="cursor:pointer;" onclick="location.href='?page=<?php echo $p; ?>';return false;" href="javascript:void(0)"><?php echo $p; ?></a></li>
-                <?php endfor; ?>
-                <li class="page-item <?php echo $page >= $totalPages ? 'disabled' : ''; ?>"><a class="page-link" style="cursor:pointer;" onclick="location.href='?page=<?php echo $page + 1; ?>';return false;" href="javascript:void(0)">下一页</a></li>
-              </ul>
-            </nav>
-          </div>
-          <?php endif; ?>
+          <div id="apiPagination" class="d-flex justify-content-center py-3"></div>
         </div>
       </div>
     </div>
@@ -288,9 +252,27 @@ $pageList = array_slice($apiList, $start, $perPage);
 
 </div>
 
-<script defer src="style/js/jquery.min.js"></script>
-<script defer src="style/js/sweetalert2.min.js"></script>
+<script src="style/js/jquery.min.js"></script>
+<script src="style/js/sweetalert2.min.js"></script>
 <script>
+// H5 修复：接口列表由 JS 渲染，分页用 AJAX POST（不再 location.href 整页刷新 / URL 传参）
+// 接口元数据由服务端一次性输出（仅含 key/name/icon/enable_key/enabled/is_default，无敏感信息）
+var API_LIST = <?php echo json_encode(array_map(function($a) use ($defaultApi) {
+    return [
+        'key'        => $a['key'],
+        'name'       => $a['name'],
+        'icon'       => $a['icon'],
+        'enable_key' => $a['enable'],
+        'enabled'    => (bool)$a['enabled'],
+        'is_default' => ($a['key'] === $defaultApi),
+    ];
+}, $apiList), JSON_UNESCAPED_UNICODE); ?>;
+var CSRF_TOKEN = '<?php echo csrf_token();?>';
+// M5 修复：CSRF Token 统一通过 Header 传递，不再放 POST Body
+$.ajaxSetup({ beforeSend: function(xhr){ xhr.setRequestHeader('X-CSRF-Token', CSRF_TOKEN); } });
+var PER_PAGE = 10;
+var _curPage = 1;
+
 function toast(type, msg, timer){
     if(type === 'success'){
         Swal.fire({title:msg, icon:'success', timer:1200, showConfirmButton:false});
@@ -302,6 +284,71 @@ function toast(type, msg, timer){
         Swal.fire('提示', msg, 'info');
     }
 }
+
+function escHtml(s){
+    if(s === null || s === undefined) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function renderApiTable(page){
+    _curPage = page;
+    var total = API_LIST.length;
+    var totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+    if(page > totalPages) page = totalPages;
+    var start = (page - 1) * PER_PAGE;
+    var slice = API_LIST.slice(start, start + PER_PAGE);
+    var tbody = $('#apiTableBody');
+    tbody.empty();
+    if(slice.length === 0){
+        tbody.html('<tr><td colspan="5" class="text-center text-muted py-4">暂无接口数据</td></tr>');
+    } else {
+        for(var i = 0; i < slice.length; i++){
+            var a = slice[i];
+            var statusBadge = a.enabled
+                ? '<span class="badge-status badge-status-on"><i class="mdi mdi-check"></i> 启用</span>'
+                : '<span class="badge-status badge-status-off"><i class="mdi mdi-close"></i> 关闭</span>';
+            var defaultCell = a.is_default
+                ? '<i class="mdi mdi-star" style="color:#f59e0b;font-size:20px;"></i>'
+                : '<span style="color:#94a3b8;">-</span>';
+            var actionBtn = a.enabled
+                ? '<button type="button" class="btn btn-warning btn-sm act-toggle" data-enable-key="'+escHtml(a.enable_key)+'" data-name="'+escHtml(a.name)+'" data-action="disable" title="禁用"><i class="mdi mdi-block-helper"></i></button>'
+                : '<button type="button" class="btn btn-success btn-sm act-toggle" data-enable-key="'+escHtml(a.enable_key)+'" data-name="'+escHtml(a.name)+'" data-action="enable" title="启用"><i class="mdi mdi-check"></i></button>';
+            tbody.append('<tr id="api-row-'+escHtml(a.enable_key)+'">' +
+                '<td>'+(start+i+1)+'</td>' +
+                '<td><i class="mdi '+escHtml(a.icon)+' me-2" style="color:#94a3b8;"></i><strong>'+escHtml(a.name)+'</strong></td>' +
+                '<td>'+statusBadge+'</td>' +
+                '<td>'+defaultCell+'</td>' +
+                '<td><div class="btn-group btn-group-sm">'+actionBtn+'</div></td>' +
+                '</tr>');
+        }
+    }
+    // 分页
+    var box = $('#apiPagination');
+    box.empty();
+    if(totalPages <= 1) return;
+    var ul = $('<ul class="pagination mb-0"></ul>');
+    ul.append('<li class="page-item '+(page<=1?'disabled':'')+'"><a class="page-link" href="javascript:void(0)" data-page="'+(page-1)+'">上一页</a></li>');
+    for(var p = 1; p <= totalPages; p++){
+        ul.append('<li class="page-item '+(p===page?'active':'')+'"><a class="page-link" href="javascript:void(0)" data-page="'+p+'">'+p+'</a></li>');
+    }
+    ul.append('<li class="page-item '+(page>=totalPages?'disabled':'')+'"><a class="page-link" href="javascript:void(0)" data-page="'+(page+1)+'">下一页</a></li>');
+    box.append($('<nav></nav>').append(ul));
+}
+
+// 事件委托：分页 + 接口启停（H2/H5 修复：避免内联 onclick 拼接 XSS）
+$(function(){
+    $('#apiPagination').on('click', '.page-link', function(){
+        var p = parseInt($(this).data('page'), 10);
+        if(!isNaN(p) && p >= 1) renderApiTable(p);
+    });
+    $('#apiTableBody').on('click', '.act-toggle', function(){
+        var enableKey = $(this).data('enable-key');
+        var name = $(this).data('name');
+        var action = $(this).data('action');
+        if(enableKey) toggleApi(enableKey, name, action);
+    });
+    renderApiTable(1);
+});
 
 function toggleApi(enableKey, name, action){
     var actText = action === 'enable' ? '启用' : '禁用';
@@ -317,25 +364,51 @@ function toggleApi(enableKey, name, action){
         cancelButtonColor: '#94a3b8',
         reverseButtons: true
     }).then(function(result){
-        if(result.isConfirmed){
-            var fd = new FormData();
-            fd.append('action', '1');
-            fd.append(enableKey, action === 'enable' ? '1' : '0');
-            fd.append('csrf_token', '<?php echo csrf_token();?>');
-            $.ajax({
-                url: 'api.php',
-                type: 'POST',
-                data: fd,
-                processData: false,
-                contentType: false,
-                success: function(){
-                    location.reload();
-                },
-                error: function(){
-                    toast('error', '操作失败，请重试！', 2000);
+        if(!result.isConfirmed) return;
+        var fd = new FormData();
+        fd.append('action', '1');
+        fd.append(enableKey, action === 'enable' ? '1' : '0');
+        $.ajax({
+            url: 'api.php',
+            type: 'POST',
+            data: fd,
+            processData: false,
+            contentType: false,
+            dataType: 'json',
+            // H5 修复：必须读取响应内容判断成功/失败，原来无参数导致服务端失败仍显示成功
+            success: function(res){
+                if(res && res.code === 0){
+                    toast('success', actText + '成功！', 1200);
+                    // 局部更新该接口行状态与统计卡片（禁止整页刷新）
+                    var row = document.getElementById('api-row-' + enableKey);
+                    if(row){
+                        var cells = row.querySelectorAll('td');
+                        if(action === 'enable'){
+                            cells[2].innerHTML = '<span class="badge-status badge-status-on"><i class="mdi mdi-check"></i> 启用</span>';
+                            cells[4].innerHTML = '<div class="btn-group btn-group-sm"><button type="button" class="btn btn-warning btn-sm act-toggle" data-enable-key="'+escHtml(enableKey)+'" data-name="'+escHtml(name)+'" data-action="disable" title="禁用"><i class="mdi mdi-block-helper"></i></button></div>';
+                            var en = document.getElementById('statEnabled'); if(en){ en.textContent = parseInt(en.textContent,10)+1; }
+                            var dis = document.getElementById('statDisabled'); if(dis){ dis.textContent = parseInt(dis.textContent,10)-1; }
+                        } else {
+                            cells[2].innerHTML = '<span class="badge-status badge-status-off"><i class="mdi mdi-close"></i> 关闭</span>';
+                            cells[4].innerHTML = '<div class="btn-group btn-group-sm"><button type="button" class="btn btn-success btn-sm act-toggle" data-enable-key="'+escHtml(enableKey)+'" data-name="'+escHtml(name)+'" data-action="enable" title="启用"><i class="mdi mdi-check"></i></button></div>';
+                            var en = document.getElementById('statEnabled'); if(en){ en.textContent = parseInt(en.textContent,10)-1; }
+                            var dis = document.getElementById('statDisabled'); if(dis){ dis.textContent = parseInt(dis.textContent,10)+1; }
+                        }
+                    }
+                    // 同步更新内存中的 API_LIST 状态
+                    for(var i = 0; i < API_LIST.length; i++){
+                        if(API_LIST[i].enable_key === enableKey){
+                            API_LIST[i].enabled = (action === 'enable');
+                        }
+                    }
+                } else {
+                    toast('error', (res && res.msg) ? res.msg : (actText + '失败！'), 3000);
                 }
-            });
-        }
+            },
+            error: function(){
+                toast('error', '网络错误，请重试！', 2000);
+            }
+        });
     });
 }
 </script>

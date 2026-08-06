@@ -61,7 +61,7 @@ curl_setopt_array($ch, [
 $body = curl_exec($ch);
 $httpCodeGet = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $curlErr = curl_error($ch);
-curl_close($ch);
+unset($ch);
 
 if ($body === false || $httpCodeGet !== 200) {
     @unlink($filepath);
@@ -126,7 +126,7 @@ curl_setopt_array($ch, [
 $uploadimg = curl_exec($ch);
 $curlErr = curl_error($ch);
 $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-curl_close($ch);
+unset($ch);
 
 // 清理临时文件
 @unlink($filepath);

@@ -3,7 +3,7 @@
  * @file upimg.php
  * @description Favicon图标上传页面，支持上传.ico格式的浏览器标签小图标并覆盖根目录favicon.ico
  * @author AI
- * @version 1.1.0
+ * @version 1.1.0-dev
  * @date 2026-08-04
  */
 declare(strict_types=1);
@@ -26,10 +26,23 @@ if(isset($_POST['submit1'])){
         $fileName = $_FILES['favicon']['name'] ?? '';
         $fileSize = $_FILES['favicon']['size'] ?? 0;
         $ext = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+        // M5/M7 修复：增加文件内容 MIME 校验 + ICO 文件头魔数校验
+        $finfo = function_exists('finfo_open') ? finfo_open(FILEINFO_MIME_TYPE) : false;
+        $mime = $finfo ? finfo_file($finfo, $tmpName) : '';
+        if ($finfo) finfo_close($finfo);
+        $allowedMimes = ['image/x-icon', 'image/vnd.microsoft.icon', 'image/png', 'image/bmp', 'image/vnd.wap.wbmp'];
+        // ICO 文件头魔数：\x00\x00\x01\x00（ICO）或 \x00\x00\x02\x00（CUR）
+        $headBytes = is_readable($tmpName) ? bin2hex((string)file_get_contents($tmpName, false, null, 0, 4)) : '';
+        $validIcoMagic = ($headBytes === '00000100' || $headBytes === '00000200');
         if (!is_uploaded_file($tmpName)) {
             $msg = '非法上传请求！';
         } elseif ($ext !== 'ico') {
             $msg = '仅允许上传 .ico 格式的图标文件！';
+        } elseif ($mime !== '' && !in_array($mime, $allowedMimes, true)) {
+            $msg = '文件内容不是有效的图标格式！';
+        } elseif (!$validIcoMagic) {
+            // M7 修复：文件头魔数不匹配 ICO/CUR 格式，拒绝上传
+            $msg = '文件头魔数校验失败，不是有效的 ICO 文件！';
         } elseif ($fileSize > 102400) {
             $msg = '文件大小不能超过 100KB！';
         } elseif (move_uploaded_file($tmpName, "../favicon.ico")) {
@@ -88,7 +101,6 @@ if(isset($_POST['submit1'])){
             </div>
             <button type="button" class="btn btn-primary" onclick="doSave()"><i class="mdi mdi-upload"></i> 上传图标</button>
             <input type="hidden" name="submit1" value="1">
-            <input type="hidden" name="csrf_token" value="<?php echo csrf_token();?>">
           </form>
         </div>
       </div>
@@ -137,7 +149,7 @@ function doSave(){
         var formData = new FormData(document.getElementById('mainForm'));
         fetch('upimg.php', {
             method: 'POST',
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': '<?php echo csrf_token();?>' },
             body: formData
         })
         .then(function(response){ return response.json(); })

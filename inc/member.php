@@ -21,7 +21,9 @@ if(isset($_COOKIE["admin_token"]))
 	$parts = explode("\t", $token);
 	$user = isset($parts[0]) ? $parts[0] : '';
 	$sid  = isset($parts[1]) ? $parts[1] : '';
-	$session=md5($conf['admin_user'].$conf['admin_pwd'].$password_hash);
+	// M2 修复：会话令牌改用 hash_hmac('sha256')，与 login.php 同步
+	// 旧版用 md5($user.$stored.$password_hash) 违反"MD5/SHA1 禁止"硬约束
+	$session=hash_hmac('sha256', $conf['admin_user'].$conf['admin_pwd'], SYS_KEY);
 	if(hash_equals($session, $sid)) {
 		$islogin=1;
 	}

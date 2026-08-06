@@ -131,11 +131,16 @@ if(isset($_POST['action'])) {
         if($id <= 0) json_exit(1, '参数错误');
         if($username === '') json_exit(1, '用户名不能为空');
         if(mb_strlen($username) > 64) json_exit(1, '用户名长度不能超过64个字符');
+        // L14 修复：邮箱字段格式校验（非空时）
+        if($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) json_exit(1, '邮箱格式不正确');
         if(!in_array($role, ['super_admin', 'user'])) json_exit(1, '角色参数错误');
         if(!in_array($status, [0, 1])) json_exit(1, '状态参数错误');
 
         $current = pkg_safe_get_row_prepared($DB, "SELECT role, username, status FROM eecms_users WHERE id=?", 'i', [$id]);
         if(!$current) json_exit(1, '用户不存在');
+
+        // H1 修复：禁止操作当前登录的管理员账号（封禁/降级自己会导致锁死）
+        if($current['username'] === $currentAdminUser) json_exit(1, '无法操作当前登录的管理员账号');
 
         // 用户名唯一性检查
         $dup = $DB->get_row_prepared("SELECT id FROM eecms_users WHERE username=? AND id != ?", 'si', [$username, $id]);
@@ -160,6 +165,8 @@ if(isset($_POST['action'])) {
             invalidate_user_sessions($id);
             api_key_disable_by_user($DB, $id);
         }
+        // H14 修复：补充审计日志
+        log_admin_action($DB, 'user_update', 'user', $id, ['username' => $username, 'role' => $role, 'status' => $status]);
         json_exit(0, '用户信息更新成功');
     }
 
@@ -179,6 +186,8 @@ if(isset($_POST['action'])) {
         if($DB->query_prepared("UPDATE eecms_users SET password=? WHERE id=?", 'si', [$hash, $id]) === false) {
             json_exit(1, '密码重置失败，请重试！');
         }
+        // H14 修复：补充审计日志
+        log_admin_action($DB, 'user_reset_password', 'user', $id, []);
         json_exit(0, '密码重置成功');
     }
 
@@ -198,8 +207,12 @@ if(isset($_POST['action'])) {
             if($superCount <= 1) json_exit(1, '无法删除，系统至少需要保留一个超级管理员');
         }
 
+        // L18: 删除用户时同步清理其名下所有 API 密钥与订阅记录，避免孤儿数据
+        pkg_safe_query_prepared($DB, "DELETE FROM api_keys WHERE user_id=?", 'i', [$id]);
         pkg_safe_query_prepared($DB, "DELETE FROM eecms_user_subs WHERE user_id=?", 'i', [$id]);
         pkg_safe_query_prepared($DB, "DELETE FROM eecms_users WHERE id=?", 'i', [$id]);
+        // H14 修复：补充审计日志
+        log_admin_action($DB, 'user_delete', 'user', $id, ['username' => $user['username']]);
         json_exit(0, '用户已删除');
     }
 
@@ -254,6 +267,8 @@ if(isset($_POST['action'])) {
 
         $delPhList = implode(',', array_fill(0, count($toDelete), '?'));
         $delPhTypes = str_repeat('i', count($toDelete));
+        // L18: 批量删除时同步清理 API 密钥与订阅记录
+        pkg_safe_query_prepared($DB, "DELETE FROM api_keys WHERE user_id IN ($delPhList)", $delPhTypes, $toDelete);
         pkg_safe_query_prepared($DB, "DELETE FROM eecms_user_subs WHERE user_id IN ($delPhList)", $delPhTypes, $toDelete);
         $ok = pkg_safe_query_prepared($DB, "DELETE FROM eecms_users WHERE id IN ($delPhList)", $delPhTypes, $toDelete);
         $affected = ($ok === false) ? 0 : (int)$ok;
@@ -282,8 +297,19 @@ if(isset($_POST['action'])) {
 
         $phList = implode(',', array_fill(0, count($intIds), '?'));
         $phTypes = str_repeat('i', count($intIds));
-        $rows = pkg_safe_get_all_prepared($DB, "SELECT id, role, status FROM eecms_users WHERE id IN ($phList)", $phTypes, $intIds);
+        $rows = pkg_safe_get_all_prepared($DB, "SELECT id, username, role, status FROM eecms_users WHERE id IN ($phList)", $phTypes, $intIds);
         if(count($rows) === 0) json_exit(1, '用户不存在');
+
+        // M3 修复：批量操作中剔除当前登录管理员（禁止封禁自己）
+        $filteredRows = [];
+        foreach($rows as $row) {
+            if($row['username'] === $currentAdminUser) continue;
+            $filteredRows[] = $row;
+        }
+        if(count($filteredRows) === 0) json_exit(1, '无法操作当前登录的管理员账号');
+        $rows = $filteredRows;
+        // 重新构造 intIds（已剔除自己）
+        $intIds = array_map(function($r){ return (int)$r['id']; }, $rows);
 
         // 禁用时检查超级管理员约束
         if($status === 0) {
@@ -327,6 +353,9 @@ if(isset($_POST['action'])) {
 
         $user = pkg_safe_get_row_prepared($DB, "SELECT id, username, role, status FROM eecms_users WHERE id=?", 'i', [$id]);
         if(!$user) json_exit(1, '用户不存在');
+
+        // M3 修复：后端校验禁止封禁自己（前端已禁用按钮，但可构造 POST 绕过）
+        if($user['username'] === $currentAdminUser) json_exit(1, '无法操作当前登录的管理员账号');
 
         $newStatus = (int)$user['status'] === 1 ? 0 : 1;
 
@@ -703,11 +732,13 @@ if(isset($_POST['action'])) {
   </div>
 </div>
 
-<script defer src="style/js/jquery.min.js"></script>
-<script defer src="style/js/bootstrap.min.js"></script>
-<script defer src="style/js/sweetalert2.min.js"></script>
+<script src="style/js/jquery.min.js"></script>
+<script src="style/js/bootstrap.min.js"></script>
+<script src="style/js/sweetalert2.min.js"></script>
 <script>
 var CSRF_TOKEN = '<?php echo csrf_token();?>';
+// M5 修复：CSRF Token 统一通过 Header 传递，不再放 POST Body
+$.ajaxSetup({ beforeSend: function(xhr){ xhr.setRequestHeader('X-CSRF-Token', CSRF_TOKEN); } });
 var editModal, resetPwdModal;
 var _usersCache = [];
 var _currentPage = 1;
@@ -721,6 +752,27 @@ window.addEventListener('DOMContentLoaded', function(){
         } else {
             $('#customStorageValueBox').hide();
         }
+    });
+    // 事件委托：避免内联 onclick 拼接字符串导致 XSS（H2 修复）
+    $('#usersTableBody').on('click', '.act-toggle', function(){
+        var id = parseInt($(this).data('id'), 10);
+        if(!isNaN(id)) toggleUserStatus(id);
+    });
+    $('#usersTableBody').on('click', '.act-edit', function(){
+        var id = parseInt($(this).data('id'), 10);
+        if(!isNaN(id)) openEdit(id);
+    });
+    $('#usersTableBody').on('click', '.act-reset-pwd', function(){
+        var id = parseInt($(this).data('id'), 10);
+        if(!isNaN(id)) openResetPwd(id);
+    });
+    $('#usersTableBody').on('click', '.act-delete', function(){
+        var id = parseInt($(this).data('id'), 10);
+        if(!isNaN(id)) deleteUser(id);
+    });
+    $('#usersTableBody').on('click', '.act-view-keys', function(){
+        var id = parseInt($(this).data('id'), 10);
+        if(!isNaN(id)) viewUserKeys(id);
     });
     loadUsers(1);
 });
@@ -752,8 +804,7 @@ function loadUsers(page){
             page: page,
             search: $('#searchInput').val(),
             role: $('#roleFilter').val(),
-            status: $('#statusFilter').val(),
-            csrf_token: CSRF_TOKEN
+            status: $('#statusFilter').val()
         },
         success: function(res){
             if(res.code === 0){
@@ -799,7 +850,6 @@ function renderTable(data){
         var lastLogin = u.last_login ? escHtml(u.last_login) : '<span class="text-muted">从未登录</span>';
         var verifiedIcon = u.email_verified == 1 ? ' <i class="mdi mdi-check-decagram text-success" title="邮箱已验证"></i>' : '';
         var selfTag = u.is_self ? ' <span class="badge bg-info">当前账号</span>' : '';
-        var userEsc = escHtml(u.username).replace(/'/g,"\\'");
 
         // 套餐信息渲染
         var pkgName = u.package_name ? escHtml(u.package_name) : '<span class="text-muted">免费版</span>';
@@ -820,24 +870,24 @@ function renderTable(data){
         var checkedAttr = _selectedIds.has(u.id) ? ' checked' : '';
         var checkCell = '<input type="checkbox" class="row-check" value="'+u.id+'"'+checkedAttr+' onchange="toggleRow('+u.id+', this.checked)">';
 
-        // 状态切换按钮
+        // 状态切换按钮（仅用 data-id，username 从 _usersCache 读取，避免内联 JS 字符串拼接 XSS）
         var toggleBtn = '';
         if(u.is_self){
             toggleBtn = '<button type="button" class="btn btn-outline-secondary" disabled title="无法操作当前账号"><i class="mdi mdi-account-question-outline"></i></button>';
         } else if(u.status === 1){
-            toggleBtn = '<button type="button" class="btn btn-outline-warning" onclick="toggleUserStatus('+u.id+',\''+userEsc+'\','+u.status+')" title="封禁用户"><i class="mdi mdi-account-cancel-outline"></i></button>';
+            toggleBtn = '<button type="button" class="btn btn-outline-warning act-toggle" data-id="'+u.id+'" title="封禁用户"><i class="mdi mdi-account-cancel-outline"></i></button>';
         } else {
-            toggleBtn = '<button type="button" class="btn btn-outline-success" onclick="toggleUserStatus('+u.id+',\''+userEsc+'\','+u.status+')" title="启用用户"><i class="mdi mdi-account-check-outline"></i></button>';
+            toggleBtn = '<button type="button" class="btn btn-outline-success act-toggle" data-id="'+u.id+'" title="启用用户"><i class="mdi mdi-account-check-outline"></i></button>';
         }
 
         var actions = '<div class="btn-group btn-group-sm">';
-        actions += '<button type="button" class="btn btn-outline-primary" onclick="openEdit('+u.id+')" title="编辑"><i class="mdi mdi-pencil"></i></button>';
+        actions += '<button type="button" class="btn btn-outline-primary act-edit" data-id="'+u.id+'" title="编辑"><i class="mdi mdi-pencil"></i></button>';
         actions += toggleBtn;
-        actions += '<button type="button" class="btn btn-outline-warning" onclick="openResetPwd('+u.id+',\''+userEsc+'\')" title="重置密码"><i class="mdi mdi-lock-reset"></i></button>';
+        actions += '<button type="button" class="btn btn-outline-warning act-reset-pwd" data-id="'+u.id+'" title="重置密码"><i class="mdi mdi-lock-reset"></i></button>';
         if(u.is_self){
             actions += '<button type="button" class="btn btn-outline-secondary" disabled title="无法删除自己"><i class="mdi mdi-delete"></i></button>';
         } else {
-            actions += '<button type="button" class="btn btn-outline-danger" onclick="deleteUser('+u.id+',\''+userEsc+'\')" title="删除"><i class="mdi mdi-delete"></i></button>';
+            actions += '<button type="button" class="btn btn-outline-danger act-delete" data-id="'+u.id+'" title="删除"><i class="mdi mdi-delete"></i></button>';
         }
         actions += '</div>';
 
@@ -849,7 +899,7 @@ function renderTable(data){
             '<td>'+roleBadge+'</td>' +
             '<td>'+statusBadge+'</td>' +
             '<td>'+u.upload_count+'</td>' +
-            '<td><a href="javascript:void(0)" onclick="viewUserKeys('+u.id+',\''+userEsc+'\')" title="查看该用户API密钥" style="cursor:pointer;">'+u.api_key_count+'</a></td>' +
+            '<td><a href="javascript:void(0)" class="act-view-keys" data-id="'+u.id+'" title="查看该用户API密钥" style="cursor:pointer;">'+u.api_key_count+'</a></td>' +
             '<td>'+pkgCell+'</td>' +
             '<td class="text-muted" style="font-size:13px;">'+escHtml(u.created_at)+'</td>' +
             '<td class="text-muted" style="font-size:13px;">'+lastLogin+'</td>' +
@@ -918,7 +968,11 @@ function clearSelection(){
 }
 
 // ============ 单个状态切换 ============
-function toggleUserStatus(id, username, currentStatus){
+function toggleUserStatus(id){
+    var u = findUser(id);
+    if(!u){ toast('error', '用户数据不存在'); return; }
+    var currentStatus = u.status;
+    var username = u.username;
     var action = currentStatus === 1 ? '封禁' : '启用';
     var html = currentStatus === 1
         ? '确定要<strong class="text-danger">封禁</strong>用户 <strong>'+escHtml(username)+'</strong> 吗？<br><span class="text-muted" style="font-size:13px;">封禁后该用户将立即被强制下线，无法登录。</span>'
@@ -937,7 +991,7 @@ function toggleUserStatus(id, username, currentStatus){
         if(result.isConfirmed){
             $.ajax({
                 url:'users.php', type:'POST', dataType:'json',
-                data:{ action:'toggle_status', id:id, csrf_token:CSRF_TOKEN },
+                data:{ action:'toggle_status', id:id },
                 success:function(res){
                     if(res.code === 0){
                         toast('success', res.msg);
@@ -970,7 +1024,7 @@ function batchDeleteSelected(){
         if(result.isConfirmed){
             $.ajax({
                 url:'users.php', type:'POST', dataType:'json',
-                data:{ action:'delete_selected', ids:ids, csrf_token:CSRF_TOKEN },
+                data:{ action:'delete_selected', ids:ids },
                 success:function(res){
                     if(res.code === 0){
                         toast('success', res.msg);
@@ -1008,7 +1062,7 @@ function batchSetStatus(status){
         if(result.isConfirmed){
             $.ajax({
                 url:'users.php', type:'POST', dataType:'json',
-                data:{ action:'set_status_selected', ids:ids, status:status, csrf_token:CSRF_TOKEN },
+                data:{ action:'set_status_selected', ids:ids, status:status },
                 success:function(res){
                     if(res.code === 0){
                         toast('success', res.msg);
@@ -1082,8 +1136,7 @@ function saveEdit(){
         username: $('#editUsername').val().trim(),
         email: $('#editEmail').val().trim(),
         role: $('#editRole').val(),
-        status: $('#editStatus').val(),
-        csrf_token: CSRF_TOKEN
+        status: $('#editStatus').val()
     };
     if(!data.username){ toast('warning', '用户名不能为空'); return; }
 
@@ -1115,9 +1168,11 @@ function saveEdit(){
     });
 }
 
-function openResetPwd(id, username){
+function openResetPwd(id){
+    var u = findUser(id);
+    if(!u){ toast('error', '用户数据不存在'); return; }
     $('#resetPwdId').val(id);
-    $('#resetPwdUsername').text(username);
+    $('#resetPwdUsername').text(u.username);
     $('#resetPwdPassword').val('');
     $('#resetPwdConfirm').val('');
     resetPwdModal.show();
@@ -1145,7 +1200,7 @@ function saveResetPwd(){
         if(!result.isConfirmed) return;
         $.ajax({
             url: 'users.php', type: 'POST', dataType: 'json',
-            data: { action: 'reset_password', id: $('#resetPwdId').val(), password: pwd, csrf_token: CSRF_TOKEN },
+            data: { action: 'reset_password', id: $('#resetPwdId').val(), password: pwd },
             success: function(res){
                 if(res.code === 0){
                     resetPwdModal.hide();
@@ -1160,7 +1215,10 @@ function saveResetPwd(){
     });
 }
 
-function deleteUser(id, username){
+function deleteUser(id){
+    var u = findUser(id);
+    if(!u){ toast('error', '用户数据不存在'); return; }
+    var username = u.username;
     Swal.fire({
         title: '确认删除',
         html: '确定要删除用户 <strong>'+escHtml(username)+'</strong> 吗？<br>该操作不可恢复！',
@@ -1175,7 +1233,7 @@ function deleteUser(id, username){
         if(result.isConfirmed){
             $.ajax({
                 url: 'users.php', type: 'POST', dataType: 'json',
-                data: { action: 'delete', id: id, csrf_token: CSRF_TOKEN },
+                data: { action: 'delete', id: id },
                 success: function(res){
                     if(res.code === 0){
                         toast('success', res.msg);
@@ -1215,7 +1273,7 @@ function loadUserSubscription(id){
 
     $.ajax({
         url: 'users.php', type: 'POST', dataType: 'json',
-        data: { action: 'get_subscription', id: id, csrf_token: CSRF_TOKEN },
+        data: { action: 'get_subscription', id: id },
         success: function(res){
             if(res.code === 0){
                 var sub = res.data.subscription;
@@ -1280,7 +1338,7 @@ function switchPackage(){
         if(result.isConfirmed){
             $.ajax({
                 url: 'users.php', type: 'POST', dataType: 'json',
-                data: { action: 'switch_package', id: id, package_id: packageId, force: force, csrf_token: CSRF_TOKEN },
+                data: { action: 'switch_package', id: id, package_id: packageId, force: force },
                 success: function(res){
                     if(res.code === 0){
                         toast('success', res.msg);
@@ -1320,7 +1378,7 @@ function saveCustomStorage(){
         if(!result.isConfirmed) return;
         $.ajax({
             url: 'users.php', type: 'POST', dataType: 'json',
-            data: { action: 'set_custom_storage', id: id, enabled: enabled, value: value || 0, csrf_token: CSRF_TOKEN },
+            data: { action: 'set_custom_storage', id: id, enabled: enabled, value: value || 0 },
             success: function(res){
                 if(res.code === 0){
                     toast('success', res.msg);
@@ -1335,11 +1393,13 @@ function saveCustomStorage(){
     });
 }
 // ============ 用户 API 密钥查看（用户管理详情 Tab） ============
-function viewUserKeys(userId, username){
-    $('#ukUserName').text(username);
+function viewUserKeys(userId){
+    var u = findUser(userId);
+    if(!u){ toast('error', '用户数据不存在'); return; }
+    $('#ukUserName').text(u.username);
     $('#ukTableBody').html('<tr><td colspan="6" class="text-center text-muted py-4"><i class="mdi mdi-loading mdi-spin"></i> 加载中...</td></tr>');
     new bootstrap.Modal(document.getElementById('userKeysModal')).show();
-    $.post('apikeys.php', {action:'user_keys', user_id:userId, csrf_token:CSRF_TOKEN}, function(res){
+    $.post('apikeys.php', {action:'user_keys', user_id:userId}, function(res){
         if(res.code !== 0){ $('#ukTableBody').html('<tr><td colspan="6" class="text-center text-danger py-4">'+res.msg+'</td></tr>'); return; }
         var list = res.data.list || [];
         $('#ukCount').text(res.data.count || 0);

@@ -69,7 +69,7 @@ curl_setopt_array($ch, [
 $uploadimg = curl_exec($ch);
 $curlErr = curl_error($ch);
 $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-curl_close($ch);
+unset($ch);
 @unlink($filepath);
 
 if ($uploadimg === false || $uploadimg === '') {

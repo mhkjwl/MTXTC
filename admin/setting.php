@@ -33,9 +33,8 @@ if(isset($_POST['action'])) {
         }
     }
     if(!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
-        $rs = $DB->query("select * from eecms_config");
         $conf = array();
-        while($rs && ($row = $DB->fetch($rs))) {
+        foreach(pkg_safe_get_all($DB, "select * from eecms_config") as $row) {
             $conf[$row['name']] = $row['main'];
         }
         header('Content-Type: application/json; charset=utf-8');
@@ -85,15 +84,14 @@ if(isset($_POST['action'])) {
               <div class="col-md-6"><label class="form-label">ICP备案号</label><input value="<?php echo htmlspecialchars($conf['icp'], ENT_QUOTES);?>" type="text" class="form-control" name="icp"></div>
               <div class="col-md-6"><label class="form-label">警告</label><input value="<?php echo htmlspecialchars($conf['Copyright'], ENT_QUOTES);?>" type="text" class="form-control" name="Copyright" placeholder="以固定横幅显示在前端页面顶部，留空则不显示"></div>
               <div class="col-md-6"><label class="form-label">建站时间</label><input value="<?php echo htmlspecialchars($conf['time'], ENT_QUOTES);?>" type="date" class="form-control" name="time"></div>
-              <div class="col-md-6"><label class="form-label">网站关键词</label><textarea rows="2" class="form-control" name="keywords"><?php echo htmlspecialchars($conf['keywords']);?></textarea></div>
-              <div class="col-md-6"><label class="form-label">网站描述</label><textarea rows="2" class="form-control" name="description"><?php echo htmlspecialchars($conf['description']);?></textarea></div>
-              <div class="col-12"><label class="form-label">弹窗通知</label><textarea rows="2" class="form-control" name="jieshao" placeholder="内容为空时前端不显示；有内容时用户首次打开网站弹出，关闭后不再弹出，直到内容修改后重新弹出"><?php echo htmlspecialchars($conf['jieshao']);?></textarea></div>
+              <div class="col-md-6"><label class="form-label">网站关键词</label><textarea rows="2" class="form-control" name="keywords"><?php echo htmlspecialchars($conf['keywords'], ENT_QUOTES, 'UTF-8');?></textarea></div>
+              <div class="col-md-6"><label class="form-label">网站描述</label><textarea rows="2" class="form-control" name="description"><?php echo htmlspecialchars($conf['description'], ENT_QUOTES, 'UTF-8');?></textarea></div>
+              <div class="col-12"><label class="form-label">弹窗通知</label><textarea rows="2" class="form-control" name="jieshao" placeholder="内容为空时前端不显示；有内容时用户首次打开网站弹出，关闭后不再弹出，直到内容修改后重新弹出"><?php echo htmlspecialchars($conf['jieshao'], ENT_QUOTES, 'UTF-8');?></textarea></div>
             </div>
             <div class="mt-4">
               <button type="button" class="btn btn-primary" onclick="doSave()"><i class="mdi mdi-content-save"></i> 保存设置</button>
             </div>
             <input type="hidden" name="action" value="1">
-            <input type="hidden" name="csrf_token" value="<?php echo csrf_token();?>">
           </form>
         </div>
       </div>
@@ -133,7 +131,7 @@ function doSave(){
             var formData = new FormData(form);
             fetch('setting.php', {
                 method: 'POST',
-                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': '<?php echo csrf_token();?>' },
                 body: formData
             })
             .then(function(response) { return response.json(); })

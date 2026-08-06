@@ -150,7 +150,7 @@ function fetchImage($url, $resolvedIp, $headers = []) {
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $contentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
     $err = curl_error($ch);
-    curl_close($ch);
+    unset($ch);
     return [$data, $httpCode, $contentType, $err];
 }
 

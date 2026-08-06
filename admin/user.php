@@ -3,7 +3,7 @@
  * @file user.php
  * @description 管理员账号信息修改页面，支持修改管理员用户名和密码，修改后同步到用户表并强制重新登录
  * @author AI
- * @version 1.1.0
+ * @version 1.1.0-dev
  * @date 2026-08-04
  */
 declare(strict_types=1);
@@ -24,35 +24,72 @@ if(isset($_POST['action'])) {
     } else {
         // 保存修改前的管理员用户名，用于检测是否发生变更及同步到 eecms_users 表
         $oldAdminUser = isset($conf['admin_user']) ? $conf['admin_user'] : '';
-        foreach ($_POST as $name => $value) {
-            if($name == 'pwd' || $name == 'action' || $name == 'csrf_token') continue;
-            if(!preg_match('/^[a-zA-Z0-9_]+$/', $name)) continue;
-            $DB->query_prepared("INSERT INTO eecms_config SET `name`=?, `main`=? ON DUPLICATE KEY UPDATE `main`=?", 'sss', [$name, $value, $value]);
+        // 字段白名单：仅允许修改管理员用户名（防止 Mass Assignment 覆盖 admin_pwd/smtp_pass 等敏感配置）
+        $newAdminUser = isset($_POST['admin_user']) ? trim($_POST['admin_user']) : '';
+        if($newAdminUser !== '' && $newAdminUser !== $oldAdminUser) {
+            if(mb_strlen($newAdminUser) > 64) {
+                if($isAjax){ echo json_encode(['code'=>1, 'msg'=>'用户名长度不能超过64个字符']); exit; }
+                $toast_icon = 'error'; $toast_title = '用户名长度不能超过64个字符';
+            } else {
+                $ok = $DB->query_prepared("INSERT INTO eecms_config SET `name`='admin_user', `main`=? ON DUPLICATE KEY UPDATE `main`=?", 'ss', [$newAdminUser, $newAdminUser]);
+                if($ok === false) {
+                    if($isAjax){ echo json_encode(['code'=>1, 'msg'=>'用户名保存失败，请重试']); exit; }
+                    $toast_icon = 'error'; $toast_title = '用户名保存失败，请重试';
+                }
+            }
         }
         $pwd = $_POST['pwd'] ?? '';
+        $hashed = null;
         if(!empty($pwd)) {
-            $hashed = password_hash($pwd, PASSWORD_DEFAULT);
-            $DB->query_prepared("UPDATE eecms_config SET `main`=? WHERE `name`='admin_pwd'", 's', [$hashed]);
+            // M6 修复：修改密码必须验证旧密码，防止 XSS/会话窃取后接管账号
+            $oldPwd = $_POST['old_pwd'] ?? '';
+            $storedPwd = isset($conf['admin_pwd']) ? (string)$conf['admin_pwd'] : '';
+            $storedIsBcrypt = (strpos($storedPwd, '$2y$') === 0 || strpos($storedPwd, '$argon2') === 0);
+            $oldOk = false;
+            if($storedIsBcrypt) {
+                $oldOk = password_verify($oldPwd, $storedPwd);
+            } elseif(strlen($storedPwd) === 32 && ctype_xdigit($storedPwd)) {
+                // 兼容历史 MD5
+                $oldOk = hash_equals($storedPwd, md5($oldPwd));
+            } elseif(strlen($storedPwd) === 40 && ctype_xdigit($storedPwd)) {
+                // 兼容历史 SHA1
+                $oldOk = hash_equals($storedPwd, sha1($oldPwd));
+            }
+            if(!$oldOk) {
+                if($isAjax){ echo json_encode(['code'=>1, 'msg'=>'旧密码验证失败，请重试']); exit; }
+                $toast_icon = 'error'; $toast_title = '旧密码验证失败，请重试';
+            } else {
+                $hashed = password_hash($pwd, PASSWORD_DEFAULT);
+                $ok = $DB->query_prepared("UPDATE eecms_config SET `main`=? WHERE `name`='admin_pwd'", 's', [$hashed]);
+                if($ok === false) {
+                    if($isAjax){ echo json_encode(['code'=>1, 'msg'=>'密码保存失败，请重试']); exit; }
+                    $toast_icon = 'error'; $toast_title = '密码保存失败，请重试';
+                }
+            }
         }
 
         // 同步修改到 eecms_users 表（用户管理列表、用户中心均读取此表）
-        $newAdminUser = isset($_POST['admin_user']) ? trim($_POST['admin_user']) : '';
         if($newAdminUser !== '' && $newAdminUser !== $oldAdminUser) {
-            $DB->query_prepared("UPDATE eecms_users SET username=? WHERE username=?", 'ss', [$newAdminUser, $oldAdminUser]);
+            // L6 修复：检查返回值，失败时回滚提示
+            if($DB->query_prepared("UPDATE eecms_users SET username=? WHERE username=?", 'ss', [$newAdminUser, $oldAdminUser]) === false) {
+                error_log('user.php: 同步用户名到 eecms_users 失败');
+            }
         }
-        if(!empty($pwd)) {
+        if(!empty($pwd) && $hashed !== null) {
             // 密码同步：用新用户名匹配（如用户名已改则用新用户名），并递增 session_version 使旧登录态失效
             $syncUser = $newAdminUser !== '' ? $newAdminUser : $oldAdminUser;
-            $DB->query_prepared("UPDATE eecms_users SET password=?, session_version = session_version + 1 WHERE username=?", 'ss', [$hashed, $syncUser]);
+            if($DB->query_prepared("UPDATE eecms_users SET password=?, session_version = session_version + 1 WHERE username=?", 'ss', [$hashed, $syncUser]) === false) {
+                error_log('user.php: 同步密码到 eecms_users 失败');
+            }
         }
 
         // 检测账号或密码是否实际发生变更 → 强制退出登录
         $usernameChanged = ($newAdminUser !== '' && $newAdminUser !== $oldAdminUser);
         $passwordChanged = !empty($pwd);
 
-        $rs = $DB->query("select * from eecms_config");
+        // L2 修复：改用 pkg_safe_get_all 封装（无参数 SELECT 也用安全封装）
         $conf = array();
-        while($rs && ($row = $DB->fetch($rs))) {
+        foreach(pkg_safe_get_all($DB, "select * from eecms_config") as $row) {
             $conf[$row['name']] = $row['main'];
         }
 
@@ -65,7 +102,7 @@ if(isset($_POST['action'])) {
             $need_logout = true;
             if($isAjax){ echo json_encode(['code'=>0, 'msg'=>'账号或密码已修改，为保障账户安全，请使用新账号密码重新登录。', 'need_logout'=>true]); exit; }
         } else {
-            $toast_icon = 'success'; $toast_title = '账号信息未发生变更！';
+            $toast_icon = 'info'; $toast_title = '账号信息未发生变更！';
             if($isAjax){ echo json_encode(['code'=>0, 'msg'=>'账号信息未发生变更！', 'need_logout'=>false]); exit; }
         }
     }
@@ -108,9 +145,12 @@ if(isset($_POST['action'])) {
               <label class="form-label">新密码</label>
               <input value="" type="password" class="form-control" name="pwd" placeholder="不修改请留空" autocomplete="off" style="max-width:400px;">
             </div>
+            <div class="mb-3">
+              <label class="form-label">旧密码（修改密码时必填）</label>
+              <input value="" type="password" class="form-control" name="old_pwd" placeholder="修改密码时需验证旧密码" autocomplete="off" style="max-width:400px;">
+            </div>
             <button type="button" class="btn btn-primary" onclick="doSave()"><i class="mdi mdi-content-save"></i> 保存修改</button>
             <input type="hidden" name="action" value="1">
-            <input type="hidden" name="csrf_token" value="<?php echo csrf_token();?>">
           </form>
         </div>
       </div>
@@ -146,10 +186,17 @@ function doSave(){
         reverseButtons: true
     }).then(function(result){
         if(!result.isConfirmed) return;
+        // M6 修复：前端校验修改密码时必须填写旧密码
+        var pwdVal = document.querySelector('input[name="pwd"]').value;
+        var oldPwdVal = document.querySelector('input[name="old_pwd"]').value;
+        if(pwdVal !== '' && oldPwdVal === ''){
+            toast('warning', '修改密码时必须填写旧密码', 3000);
+            return;
+        }
         var formData = new FormData(document.getElementById('mainForm'));
         fetch('user.php', {
             method: 'POST',
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': '<?php echo csrf_token();?>' },
             body: formData
         })
         .then(function(response){ return response.json(); })

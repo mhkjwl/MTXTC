@@ -3,7 +3,7 @@
  * @file api/dogimg.php
  * @description 狗狗图床上传适配器（适配 ZYCS-IMG 新版 API：顶层 id + 直接返回 url）
  * @author AI
- * @version 1.2.0
+ * @version 1.2.0-dev
  * @date 2026-08-04
  */
 declare(strict_types=1);
@@ -81,7 +81,7 @@ for ($attempt = 1; $attempt <= $maxRetries + 1; $attempt++) {
     usleep(1000000);
 }
 
-curl_close($ch);
+unset($ch);
 @unlink($filepath);
 
 if ($uploadimg === false || $uploadimg === '') {

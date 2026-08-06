@@ -26,3 +26,6 @@ config.local.php
 
 # Composer / dependencies (if any later)
 /vendor/
+
+# Node.js dependencies (puppeteer-core proxy, not part of PHP app)
+/node_modules/

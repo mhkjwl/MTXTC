@@ -22,26 +22,38 @@ header('Content-Type: application/json');
 $currentDate = date('Y-m-d');
 
 // 确保每日统计表存在（累计统计，不因图片删除而减少）
+// CREATE TABLE IF NOT EXISTS 很轻量，保留以确保旧站点也有该表
 $DB->query("CREATE TABLE IF NOT EXISTS eecms_upload_daily (
     stat_date DATE PRIMARY KEY,
     upload_count INT NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
-// 一次性迁移：如果 eecms_upload_daily 为空但 eecms_images 有数据，则从 eecms_images 导入历史数据
-$dailyCount = $DB->get_row("SELECT COUNT(*) AS cnt FROM eecms_upload_daily");
-if ($dailyCount && (int)$dailyCount['cnt'] === 0) {
-    $imagesTableExists = $DB->get_row("SHOW TABLES LIKE 'eecms_images'");
-    if ($imagesTableExists) {
-        $rs = $DB->query("SELECT DATE(created_at) AS d, COUNT(*) AS c FROM eecms_images GROUP BY DATE(created_at)");
-        while($rs && ($row = $DB->fetch($rs))) {
-            $cnt = (int)$row['c'];
-            $DB->query_prepared(
-                "INSERT INTO eecms_upload_daily SET stat_date=?, upload_count=? ON DUPLICATE KEY UPDATE upload_count = upload_count + ?",
-                'sii',
-                [$row['d'], $cnt, $cnt]
-            );
+// M4 修复：一次性历史数据迁移改用配置标志 stats_daily_migrated 守卫，
+//          原实现每次请求都执行 COUNT(*) + SHOW TABLES 检查，仪表盘高频轮询时产生无谓开销
+if (empty($conf['stats_daily_migrated'])) {
+    // 如果 eecms_upload_daily 为空但 eecms_images 有数据，则从 eecms_images 导入历史数据
+    $dailyCount = $DB->get_row("SELECT COUNT(*) AS cnt FROM eecms_upload_daily");
+    if ($dailyCount && (int)$dailyCount['cnt'] === 0) {
+        $imagesTableExists = $DB->get_row("SHOW TABLES LIKE 'eecms_images'");
+        if ($imagesTableExists) {
+            $rs = $DB->query("SELECT DATE(created_at) AS d, COUNT(*) AS c FROM eecms_images GROUP BY DATE(created_at)");
+            while($rs && ($row = $DB->fetch($rs))) {
+                $cnt = (int)$row['c'];
+                $DB->query_prepared(
+                    "INSERT INTO eecms_upload_daily SET stat_date=?, upload_count=? ON DUPLICATE KEY UPDATE upload_count = upload_count + ?",
+                    'sii',
+                    [$row['d'], $cnt, $cnt]
+                );
+            }
         }
     }
+    // 无论是否导入数据，都标记迁移已完成，避免后续请求重复检查
+    $DB->query_prepared(
+        "INSERT INTO eecms_config SET `name`=?,`main`=? ON DUPLICATE KEY UPDATE `main`=?",
+        'sss',
+        ['stats_daily_migrated', '1', '1']
+    );
+    $conf['stats_daily_migrated'] = '1';
 }
 
 // 从数据库读取当前值
@@ -68,8 +80,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $failCnt = isset($_POST['fail'])    ? max(0, intval($_POST['fail']))    : 0;
 
     // 原子更新总计数（避免并发竞态条件）
-    $DB->query("INSERT INTO eecms_config SET `name`='upload_total_ok',`main`='" . intval($okCnt) . "' ON DUPLICATE KEY UPDATE `main` = CAST(`main` AS UNSIGNED) + " . intval($okCnt));
-    $DB->query("INSERT INTO eecms_config SET `name`='upload_total_fail',`main`='" . intval($failCnt) . "' ON DUPLICATE KEY UPDATE `main` = CAST(`main` AS UNSIGNED) + " . intval($failCnt));
+    // M3 修复：原用 intval() 字符串拼接 SQL，违反 § 8.3.4 预处理语句规范，改为 query_prepared
+    $DB->query_prepared(
+        "INSERT INTO eecms_config SET `name`='upload_total_ok',`main`=? ON DUPLICATE KEY UPDATE `main` = CAST(`main` AS UNSIGNED) + ?",
+        'ii',
+        [$okCnt, $okCnt]
+    );
+    $DB->query_prepared(
+        "INSERT INTO eecms_config SET `name`='upload_total_fail',`main`=? ON DUPLICATE KEY UPDATE `main` = CAST(`main` AS UNSIGNED) + ?",
+        'ii',
+        [$failCnt, $failCnt]
+    );
 
     // 今日计数：先读取库中记录的日期，跨天则先清零再写入本次计数
     $dateRow = $DB->get_row("SELECT `main` FROM eecms_config WHERE `name`='upload_today_date'");
@@ -81,12 +102,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'ss',
             [$currentDate, $currentDate]
         );
-        $DB->query("INSERT INTO eecms_config SET `name`='upload_today_ok',`main`='" . intval($okCnt) . "' ON DUPLICATE KEY UPDATE `main`='" . intval($okCnt) . "'");
-        $DB->query("INSERT INTO eecms_config SET `name`='upload_today_fail',`main`='" . intval($failCnt) . "' ON DUPLICATE KEY UPDATE `main`='" . intval($failCnt) . "'");
+        $DB->query_prepared(
+            "INSERT INTO eecms_config SET `name`='upload_today_ok',`main`=? ON DUPLICATE KEY UPDATE `main`=?",
+            'ii',
+            [$okCnt, $okCnt]
+        );
+        $DB->query_prepared(
+            "INSERT INTO eecms_config SET `name`='upload_today_fail',`main`=? ON DUPLICATE KEY UPDATE `main`=?",
+            'ii',
+            [$failCnt, $failCnt]
+        );
     } else {
         // 当天：原子累加
-        $DB->query("INSERT INTO eecms_config SET `name`='upload_today_ok',`main`='" . intval($okCnt) . "' ON DUPLICATE KEY UPDATE `main` = CAST(`main` AS UNSIGNED) + " . intval($okCnt));
-        $DB->query("INSERT INTO eecms_config SET `name`='upload_today_fail',`main`='" . intval($failCnt) . "' ON DUPLICATE KEY UPDATE `main` = CAST(`main` AS UNSIGNED) + " . intval($failCnt));
+        $DB->query_prepared(
+            "INSERT INTO eecms_config SET `name`='upload_today_ok',`main`=? ON DUPLICATE KEY UPDATE `main` = CAST(`main` AS UNSIGNED) + ?",
+            'ii',
+            [$okCnt, $okCnt]
+        );
+        $DB->query_prepared(
+            "INSERT INTO eecms_config SET `name`='upload_today_fail',`main`=? ON DUPLICATE KEY UPDATE `main` = CAST(`main` AS UNSIGNED) + ?",
+            'ii',
+            [$failCnt, $failCnt]
+        );
     }
 
     // 更新每日累计统计（不因图片删除而减少）

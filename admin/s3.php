@@ -3,7 +3,7 @@
  * @file s3.php
  * @description S3兼容存储配置页面，管理S3存储的新增/编辑/删除，支持Endpoint、Bucket、密钥加密存储及自定义域名
  * @author AI
- * @version 1.2.0
+ * @version 1.2.0-dev
  * @date 2026-08-04
  */
 declare(strict_types=1);
@@ -12,8 +12,6 @@ ini_set("display_errors", 0);
 require('../inc/lang.php');
 require('../inc/common.php');
 if(!isset($islogin) || $islogin!=1) exit('<script>parent.location.href="login.php";</script>');
-
-$toast_icon = ''; $toast_title = '';
 
 // 从数据库加载 S3 存储配置（解密 secret_key）
 $s3Configs = array();
@@ -45,6 +43,8 @@ if(isset($_POST['action'])) {
     if($act === 'list') {
         $out = array();
         foreach($s3Configs as $i => $cfg) {
+            // 跳过软删除项（H3 修复：删除时保留索引避免 group_items.s3_id 绑定错位）
+            if(isset($cfg['deleted']) && $cfg['deleted'] === '1') continue;
             $out[] = array(
                 'id'       => (int)$i,
                 'name'     => isset($cfg['name']) ? $cfg['name'] : '',
@@ -61,28 +61,39 @@ if(isset($_POST['action'])) {
     // ---- get：返回单条配置（编辑回填用，secret_key 以占位符返回）----
     if($act === 'get' && isset($_POST['id'])) {
         $id = (int)$_POST['id'];
-        if(!isset($s3Configs[$id])) {
+        if(!isset($s3Configs[$id]) || (isset($s3Configs[$id]['deleted']) && $s3Configs[$id]['deleted'] === '1')) {
             echo json_encode(['code' => 1, 'msg' => '配置不存在！']);
             exit;
         }
         $cfg = $s3Configs[$id];
-        // 编辑回填时 secret_key 用占位符，留空保存则保持原值（由 save 分支处理）
-        $cfg['secret_key'] = '••••••••••••••••';
+        // L11 修复：用固定标志位 __KEEP_EXISTING__ 替代易被用户输入绕过的 ••• 占位符
+        $cfg['secret_key'] = '__KEEP_EXISTING__';
+        // M17 修复：access_key 同样掩码（仅显示后4位），与 secret_key 处理一致
+        $ak = isset($cfg['access_key']) ? $cfg['access_key'] : '';
+        $cfg['access_key'] = strlen($ak) > 4 ? str_repeat('•', strlen($ak) - 4) . substr($ak, -4) : '••••';
         $cfg['id'] = (int)$id;
         echo json_encode(['code' => 0, 'data' => $cfg]);
         exit;
     }
 
-    // ---- delete：删除指定配置 ----
+    // ---- delete：软删除指定配置（保留数组索引，避免 eecms_api_group_items.s3_id 绑定错位）----
     if($act === 'delete' && isset($_POST['id'])) {
         $id = (int)$_POST['id'];
-        if(!isset($s3Configs[$id])) {
+        if(!isset($s3Configs[$id]) || (isset($s3Configs[$id]['deleted']) && $s3Configs[$id]['deleted'] === '1')) {
             echo json_encode(['code' => 1, 'msg' => '配置不存在！']);
             exit;
         }
-        array_splice($s3Configs, $id, 1);
-        $s3Configs = array_values($s3Configs);
-        $json = json_encode($s3Configs, JSON_UNESCAPED_UNICODE);
+        // 软删除：标记 deleted=1 + 强制禁用，保留索引位以保持其他配置的 s3_id 稳定
+        $s3Configs[$id]['deleted'] = '1';
+        $s3Configs[$id]['enabled'] = '0';
+        // H2 修复：存库前必须重新加密所有 secret_key，否则明文落库
+        $s3ConfigsToSave = array_map(function($cfg) {
+            if(isset($cfg['secret_key'])) {
+                $cfg['secret_key'] = ct_encrypt($cfg['secret_key']);
+            }
+            return $cfg;
+        }, array_values($s3Configs));
+        $json = json_encode($s3ConfigsToSave, JSON_UNESCAPED_UNICODE);
         $ok = $DB->query_prepared("INSERT INTO eecms_config SET `name`=?, `main`=? ON DUPLICATE KEY UPDATE `main`=?", 'sss', ['s3_storage_configs', $json, $json]);
         if($ok === false) {
             echo json_encode(['code' => 1, 'msg' => '配置删除失败，请重试！']);
@@ -127,10 +138,16 @@ if(isset($_POST['action'])) {
         if($entry['secret_key'] === '••••••••••••••••' && $editId !== '' && isset($s3Configs[(int)$editId])) {
             $entry['secret_key'] = $s3Configs[(int)$editId]['secret_key'];
         }
+        // M17 修复：编辑时 access_key 为掩码（含 •）则保留原值
+        if($editId !== '' && isset($s3Configs[(int)$editId]) && strpos($entry['access_key'], '•') !== false) {
+            $entry['access_key'] = $s3Configs[(int)$editId]['access_key'];
+        }
 
-        if($editId !== '' && isset($s3Configs[(int)$editId])) {
+        if($editId !== '' && isset($s3Configs[(int)$editId]) && !(isset($s3Configs[(int)$editId]['deleted']) && $s3Configs[(int)$editId]['deleted'] === '1')) {
             $s3Configs[(int)$editId] = $entry;
         } else {
+            // 新增配置：硬约束要求"所有新增床接口/S3存储必须默认禁用"，服务端强制（忽略前端传入）
+            $entry['enabled'] = '0';
             $s3Configs[] = $entry;
         }
 
@@ -321,7 +338,6 @@ if(isset($_POST['action'])) {
 
           <input type="hidden" name="action" value="save">
           <input type="hidden" name="edit_id" id="f_edit_id" value="">
-          <input type="hidden" name="csrf_token" value="<?php echo csrf_token();?>">
         </form>
       </div>
       <div class="modal-footer">
@@ -332,11 +348,13 @@ if(isset($_POST['action'])) {
   </div>
 </div>
 
-<script defer src="style/js/jquery.min.js"></script>
-<script defer src="style/js/bootstrap.min.js"></script>
+<script src="style/js/jquery.min.js"></script>
+<script src="style/js/bootstrap.min.js"></script>
 <script src="style/js/sweetalert2.min.js"></script>
 <script>
 var CSRF_TOKEN = '<?php echo csrf_token();?>';
+// M5 修复：CSRF Token 统一通过 Header 传递，不再放 POST Body
+$.ajaxSetup({ beforeSend: function(xhr){ xhr.setRequestHeader('X-CSRF-Token', CSRF_TOKEN); } });
 var s3Modal;
 
 function toast(type, msg, timer){
@@ -361,7 +379,7 @@ function escHtml(s){
 function loadS3Configs(){
     $.ajax({
         url:'', type:'POST',
-        data:{action:'list', csrf_token:CSRF_TOKEN},
+        data:{action:'list'},
         dataType:'json',
         success:function(resp){
             var tbody = $('#s3TableBody');
@@ -387,8 +405,8 @@ function loadS3Configs(){
                     '<td><code style="font-size:12px;">'+escHtml(cfg.endpoint)+'</code></td>' +
                     '<td>'+statusBadge+'</td>' +
                     '<td><div class="btn-group btn-group-sm">' +
-                        '<button type="button" class="btn btn-info btn-sm" onclick="openS3Modal('+cfg.id+')" title="编辑"><i class="mdi mdi-pencil"></i></button>' +
-                        '<button type="button" class="btn btn-danger btn-sm" onclick="deleteConfig('+cfg.id+','+JSON.stringify(name)+')" title="删除"><i class="mdi mdi-delete"></i></button>' +
+                        '<button type="button" class="btn btn-info btn-sm act-edit" data-id="'+cfg.id+'" title="编辑"><i class="mdi mdi-pencil"></i></button>' +
+                        '<button type="button" class="btn btn-danger btn-sm act-delete" data-id="'+cfg.id+'" data-name="'+name+'" title="删除"><i class="mdi mdi-delete"></i></button>' +
                     '</div></td>' +
                 '</tr>';
             });
@@ -418,7 +436,7 @@ function openS3Modal(id){
         $('#s3SaveBtnText').text('保存修改');
         $.ajax({
             url:'', type:'POST',
-            data:{action:'get', id:id, csrf_token:CSRF_TOKEN},
+            data:{action:'get', id:id},
             dataType:'json',
             success:function(resp){
                 if(resp.code !== 0){ toast('error', resp.msg || '配置不存在'); return; }
@@ -513,7 +531,6 @@ function deleteConfig(id, name){
         var formData = new FormData();
         formData.append('action', 'delete');
         formData.append('id', id);
-        formData.append('csrf_token', CSRF_TOKEN);
         $.ajax({
             url:'', type:'POST', data:formData, processData:false, contentType:false, dataType:'json',
             success:function(resp){
@@ -529,10 +546,20 @@ function deleteConfig(id, name){
     });
 }
 
-// 页面就绪：初始化弹窗实例 + 加载列表
+// 页面就绪：初始化弹窗实例 + 加载列表 + 事件委托（避免内联 onclick 拼接导致 XSS，H2 修复）
 document.addEventListener('DOMContentLoaded', function(){
     var modalEl = document.getElementById('s3EditModal');
     s3Modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+    // 事件委托
+    $('#s3TableBody').on('click', '.act-edit', function(){
+        var id = $(this).data('id');
+        if(typeof id !== 'undefined') openS3Modal(id);
+    });
+    $('#s3TableBody').on('click', '.act-delete', function(){
+        var id = $(this).data('id');
+        var name = $(this).data('name') || '';
+        if(typeof id !== 'undefined') deleteConfig(id, name);
+    });
     loadS3Configs();
 });
 </script>

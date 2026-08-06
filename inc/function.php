@@ -66,7 +66,7 @@ function get_curl($url,$post=0,$referer=1,$cookie=0,$header=0,$ua=0,$nobaody=0){
 	curl_setopt($ch, CURLOPT_ENCODING, "gzip");
 	curl_setopt($ch, CURLOPT_RETURNTRANSFER,1);
 	$ret = curl_exec($ch);
-	curl_close($ch);
+	unset($ch);
 	return $ret;
 }
 function real_ip(){
@@ -91,25 +91,8 @@ function real_ip(){
 	}
 	return $ip;
 }
-function get_ip_city($ip)
-{
-    $url = 'https://int.dpool.sina.com.cn/iplookup/iplookup.php?format=json&ip=';
-    @$city = get_curl($url . $ip);
-    $city = json_decode($city, true);
-    if (!is_array($city)) {
-        return false;
-    }
-    if (isset($city['city']) && $city['city']) {
-        $location = ($city['province'] ?? '').($city['city'] ?? '');
-    } else {
-        $location = $city['province'] ?? '';
-    }
-	if($location){
-		return $location;
-	}else{
-		return false;
-	}
-}
+// L3 修复：删除死代码 get_ip_city() —— 全项目无调用点，且依赖已失效的新浪 IP 定位 API
+// （int.dpool.sina.com.cn 已停止服务），保留只会误导维护者并引入无谓的外部依赖。
 // 注：原 send_mail() 为不可达死代码（引用不存在的 includes/smtp.class.php），已删除。
 // 邮件发送统一使用 inc/smtp_mailer.php（user_auth.php 中的 send_verification_email）。
 function daddslashes($string, $force = 1, $strip = FALSE) {
@@ -129,20 +112,62 @@ function daddslashes($string, $force = 1, $strip = FALSE) {
 
 function getSubstr($str, $leftStr, $rightStr)
 {
+	// M2 修复：strpos 未命中时返回 false（非 -1），原 `$left < 0` 无法捕获 false，
+	//         会导致后续 strpos($str, $rightStr, false) 在 PHP 8.1+ 触发弃用/类型错误
 	$left = strpos($str, $leftStr);
-	//echo '左边:'.$left;
-	$right = strpos($str, $rightStr,$left);
-	//echo '<br>右边:'.$right;
-	if($left < 0 or $right < $left) return '';
-	return substr($str, $left + strlen($leftStr), $right-$left-strlen($leftStr));
+	if($left === false) return '';
+	$right = strpos($str, $rightStr, $left);
+	if($right === false || $right < $left) return '';
+	return substr($str, $left + strlen($leftStr), $right - $left - strlen($leftStr));
 }
 
 function strexists($string, $find) {
 	return !(strpos($string, $find) === FALSE);
 }
 function authcode($string, $operation = 'DECODE', $key = '', $expiry = 0) {
+	// H5 修复：改用 AES-256-CBC + HMAC-SHA256 替代不安全的 RC4+MD5
+	// 向后兼容：解码时优先尝试新格式（v2:），失败则回退到旧 RC4 实现
+	$useKey = $key ? $key : ENCRYPT_KEY;
+
+	if($operation == 'DECODE') {
+		// 新格式：v2:{base64(iv+ciphertext+hmac)}
+		if(strpos($string, 'v2:') === 0) {
+			$payload = substr($string, 3);
+			$raw = base64_decode($payload, true);
+			if($raw === false || strlen($raw) < 48) return '';
+			$iv = substr($raw, 0, 16);
+			$hmac = substr($raw, -32);
+			$ciphertext = substr($raw, 16, strlen($raw) - 48);
+			$expectedHmac = hash_hmac('sha256', $iv . $ciphertext, $useKey, true);
+			if(!hash_equals($expectedHmac, $hmac)) return '';
+			$decrypted = openssl_decrypt($ciphertext, 'AES-256-CBC', hash('sha256', $useKey, true), OPENSSL_RAW_DATA, $iv);
+			if($decrypted === false) return '';
+			// 检查过期时间（前10位时间戳）
+			$__ts = (int)substr($decrypted, 0, 10);
+			if($__ts > 0 && $__ts <= time()) return '';
+			return substr($decrypted, 10);
+		}
+		// 旧格式回退：RC4+MD5（向后兼容已存在的 Cookie）
+		return authcode_legacy($string, 'DECODE', $useKey, $expiry);
+	} else {
+		// ENCODE：使用新格式 v2:
+		$iv = random_bytes(16);
+		$expire = sprintf('%010d', $expiry ? $expiry + time() : 0);
+		$plaintext = $expire . $string;
+		$ciphertext = openssl_encrypt($plaintext, 'AES-256-CBC', hash('sha256', $useKey, true), OPENSSL_RAW_DATA, $iv);
+		if($ciphertext === false) return '';
+		$hmac = hash_hmac('sha256', $iv . $ciphertext, $useKey, true);
+		return 'v2:' . base64_encode($iv . $ciphertext . $hmac);
+	}
+}
+
+/**
+ * 旧版 authcode 实现（RC4+MD5），仅用于向后兼容解码旧 Cookie
+ * @deprecated 已被 authcode 的 AES-256-CBC 实现取代，新数据不再使用此函数
+ */
+function authcode_legacy($string, $operation = 'DECODE', $key = '', $expiry = 0) {
 	$ckey_length = 4;
-	$key = md5($key ? $key : ENCRYPT_KEY);
+	$key = md5($key);
 	$keya = md5(substr($key, 0, 16));
 	$keyb = md5(substr($key, 16, 16));
 	$keyc = $ckey_length ? ($operation == 'DECODE' ? substr($string, 0, $ckey_length): substr(md5(microtime()), -$ckey_length)) : '';
@@ -171,8 +196,6 @@ function authcode($string, $operation = 'DECODE', $key = '', $expiry = 0) {
 		$result .= chr(ord($string[$i]) ^ ($box[($box[$a] + $box[$j]) % 256]));
 	}
 	if($operation == 'DECODE') {
-		// PHP8 兼容：解密失败时 $result 为乱码，substr 取值可能非数字，
-		// 显式转 (int) 避免「string - int」TypeError；数据不合法时返回空串。
 		$__ts = (int)substr($result, 0, 10);
 		if(($__ts == 0 || $__ts - time() > 0) && substr($result, 10, 16) == substr(md5(substr($result, 26).$keyb), 0, 16)) {
 			return substr($result, 26);
@@ -184,16 +207,8 @@ function authcode($string, $operation = 'DECODE', $key = '', $expiry = 0) {
 	}
 }
 
-function random($length, $numeric = 0) {
-	$seed = base_convert(md5(microtime().$_SERVER['DOCUMENT_ROOT']), 16, $numeric ? 10 : 35);
-	$seed = $numeric ? (str_replace('0', '', $seed).'012340567890') : ($seed.'zZ'.strtoupper($seed));
-	$hash = '';
-	$max = strlen($seed) - 1;
-	for($i = 0; $i < $length; $i++) {
-		$hash .= $seed[mt_rand(0, $max)];
-	}
-	return $hash;
-}
+// L2 修复：删除死代码 random() —— 全项目无调用点（文件名生成统一用 random_name()），
+//          且其实现基于 md5(microtime()) + mt_rand 弱随机源，保留会误导维护者用于安全场景。
 
 /**
  * 生成随机文件名（小写字母+数字）
@@ -205,7 +220,12 @@ function random_name($length = 12) {
 	$str = '';
 	$max = strlen($chars) - 1;
 	for($i = 0; $i < $length; $i++) {
-		$str .= $chars[mt_rand(0, $max)];
+		// H12 修复：使用 random_int 替代 mt_rand，密码学安全
+		try {
+			$str .= $chars[random_int(0, $max)];
+		} catch (Throwable $e) {
+			$str .= $chars[mt_rand(0, $max)];
+		}
 	}
 	return $str;
 }
@@ -428,4 +448,71 @@ function ct_decrypt($ciphertext) {
 	if($decrypted === false) return $ciphertext; // 解密失败时返回原值
 	return $decrypted;
 }
-?>
+
+/**
+ * 获取图床接口配置（统一配置源，消除 index.php / api/upload.php / api/api_upload.php 三处硬编码）
+ *
+ * 每个接口的唯一标识即数组的 key（如 cfbed / 360 / local），value 包含：
+ *   - name:     接口显示名称
+ *   - max_size: 单文件大小上限（MB），0.5 表示 512KB
+ *
+ * 新增图床接口时只需在此处添加一行，三处调用方自动同步。
+ *
+ * @return array<string, array{name: string, max_size: float}>
+ */
+function get_api_config() {
+	return [
+		'cfbed'      => ['name' => '自建图床',       'max_size' => 100],
+		'360'        => ['name' => '360图床',        'max_size' => 10],
+		'local'      => ['name' => '本地上传',       'max_size' => 10],
+		'chevereto'  => ['name' => 'PlcGO图床',      'max_size' => 10],
+		'zhongzhuan' => ['name' => '凌云图床',       'max_size' => 10],
+		'phototourl' => ['name' => 'PHOTO图床',      'max_size' => 10],
+		'imgloc'     => ['name' => 'IMGLOC图床',     'max_size' => 10],
+		'locimg'     => ['name' => 'LOC图床',        'max_size' => 10],
+		'jisu'       => ['name' => '极速图床',       'max_size' => 3],
+		'yopngs'     => ['name' => '有图床',         'max_size' => 10],
+		'feria'      => ['name' => '风筝图床',       'max_size' => 10],
+		'gurl'       => ['name' => 'Telegraph图床',  'max_size' => 5],
+		'ljpic'      => ['name' => '云间图床',       'max_size' => 3],
+		'nickyam'    => ['name' => 'Telegraph2图床', 'max_size' => 5],
+		'dogimg'     => ['name' => '狗狗图床',       'max_size' => 10],
+		'matu'       => ['name' => '宝马图床',       'max_size' => 10],
+		'pnglog'     => ['name' => '盘络图床',       'max_size' => 5],
+		'lvse'       => ['name' => '绿色图床',       'max_size' => 5],
+		'fatcat'     => ['name' => '肥喵图床',       'max_size' => 10],
+		'131img'     => ['name' => '131图床',        'max_size' => 20],
+		'feimg'      => ['name' => 'FE图床',         'max_size' => 64],
+		'yootn'      => ['name' => '友藤图床',       'max_size' => 20],
+		'czl'        => ['name' => 'CZL图床',        'max_size' => 0.5],
+		'tutu'       => ['name' => 'TUTU图床',       'max_size' => 5],
+		'uuimg'      => ['name' => '悠悠图床',       'max_size' => 4997],
+		'tuwu'       => ['name' => '图屋图床',       'max_size' => 20],
+		'urusai'     => ['name' => 'UR图床',         'max_size' => 64],
+		'imgcc'      => ['name' => '云图床',         'max_size' => 10],
+		'imgdata'    => ['name' => 'ImgURL图床',     'max_size' => 10],
+		'pngcdn'     => ['name' => '云朵图床',       'max_size' => 10],
+		'naixiai'    => ['name' => '奶昔图床',       'max_size' => 10],
+		'yiyunt'     => ['name' => '怡云图床',       'max_size' => 10],
+		'scdn'       => ['name' => 'SCDN图床',       'max_size' => 20],
+		'imgbb'      => ['name' => 'ImgBB图床',      'max_size' => 32],
+		'imgurla'    => ['name' => 'Imgur.LA图床',   'max_size' => 10],
+		'helloimg'   => ['name' => 'Hello图床',      'max_size' => 10],
+		'stardots'   => ['name' => 'StarDots图床',   'max_size' => 10],
+		'remit'      => ['name' => 'Remit图床',      'max_size' => 10],
+		'alibaba'    => ['name' => '阿里巴巴图床',    'max_size' => 10],
+		'beeimg'     => ['name' => '蜜蜂图床',       'max_size' => 10],
+		'meituan'    => ['name' => '美团创作图床',    'max_size' => 10],
+		'suning'     => ['name' => '苏宁易购图床',    'max_size' => 10],
+		'meipai'     => ['name' => '美拍网图床',      'max_size' => 10],
+		'alipay'     => ['name' => '支付宝图床',      'max_size' => 10],
+		'youzan'     => ['name' => '有赞图床',       'max_size' => 10],
+		'wentian'    => ['name' => 'WENTIAN',       'max_size' => 5],
+		'imgw'       => ['name' => '图网图床',       'max_size' => 30],
+		'xwyue'      => ['name' => '星跃图床',       'max_size' => 20],
+		'keye'       => ['name' => '珂艺云图床',      'max_size' => 100],
+		'shaitu'     => ['name' => '晒图床',         'max_size' => 10],
+		'guaigua'    => ['name' => '乖乖图床',       'max_size' => 10],
+		'imgtolink'  => ['name' => 'LINK图床',       'max_size' => 5],
+	];
+}

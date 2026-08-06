@@ -3,7 +3,7 @@
  * @file regconfig.php
  * @description 注册与上传设置页面，配置用户注册开关、邮箱验证、上传登录要求及SMTP邮件服务参数
  * @author AI
- * @version 1.1.0
+ * @version 1.1.0-dev
  * @date 2026-08-04
  */
 declare(strict_types=1);
@@ -54,9 +54,8 @@ if(isset($_POST['action']) && $_POST['action'] === 'save') {
         }
     }
     // 重新加载配置
-    $rs = $DB->query("SELECT * FROM eecms_config");
     $conf = [];
-    while($rs && ($row = $DB->fetch($rs))) {
+    foreach(pkg_safe_get_all($DB, "SELECT * FROM eecms_config") as $row) {
         $conf[$row['name']] = $row['main'];
     }
     echo json_encode(['code' => 0, 'msg' => '设置保存成功！']);
@@ -112,7 +111,9 @@ if(isset($_POST['action']) && $_POST['action'] === 'test_email') {
         }
     }
 
-    $subject = "【{$siteName}】SMTP 测试邮件";
+    // M16 修复：邮件标题过滤换行符，防止邮件头注入
+    $safeSiteName = str_replace(["\r", "\n", "%0a", "%0d"], '', $siteName);
+    $subject = "【{$safeSiteName}】SMTP 测试邮件";
     $body = '<!DOCTYPE html><html><body style="font-family:sans-serif;padding:20px;">'
           . '<h2 style="color:#6d4aff;">SMTP 配置测试成功</h2>'
           . '<p>这是一封来自 ' . htmlspecialchars($siteName) . ' 的测试邮件。</p>'
@@ -304,7 +305,6 @@ $smtpConfigured     = is_smtp_configured();
               <?php endif; ?>
             </div>
             <input type="hidden" name="action" value="save">
-            <input type="hidden" name="csrf_token" value="<?php echo csrf_token();?>">
           </form>
         </div>
       </div>
@@ -335,9 +335,9 @@ $smtpConfigured     = is_smtp_configured();
 
 </div>
 
-<script defer src="style/js/sweetalert2.min.js"></script>
+<script src="style/js/sweetalert2.min.js"></script>
 <script>
-var csrfToken = '<?php echo csrf_token();?>';
+// L8 修复：移除未使用的 csrfToken 死代码（M5：CSRF Token 已改走 Header 传递）
 function toast(type, msg, timer){
     if(type === 'success'){
         Swal.fire({title:msg, icon:'success', timer:1200, showConfirmButton:false});
@@ -406,7 +406,7 @@ function saveConfig(){
 
             fetch('regconfig.php', {
                 method: 'POST',
-                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': '<?php echo csrf_token();?>' },
                 body: formData
             })
             .then(function(response){ return response.json(); })
@@ -441,7 +441,7 @@ function sendTestEmail(){
 
     fetch('regconfig.php', {
         method: 'POST',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': '<?php echo csrf_token();?>' },
         body: formData
     })
     .then(function(response){ return response.json(); })

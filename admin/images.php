@@ -86,8 +86,9 @@ if(isset($_POST['action'])) {
 
         // 用户列表（用于筛选下拉）：列出所有注册用户，而不仅是有上传记录的用户，
         // 否则用户尚未上传图片时下拉框里无法选中该用户
+        // M1 修复：原查询无 LIMIT，用户量增大后会拉取全表导致内存/性能问题，限制 500 条
         $usersList = [];
-        $urs = $DB->query("SELECT id AS user_id, username FROM eecms_users ORDER BY username ASC");
+        $urs = $DB->query("SELECT id AS user_id, username FROM eecms_users ORDER BY username ASC LIMIT 500");
         while($urow = $DB->fetch($urs)) {
             $usersList[] = [
                 'user_id'  => (int)$urow['user_id'],
@@ -126,9 +127,9 @@ if(isset($_POST['action'])) {
         $DB->query_prepared("DELETE FROM eecms_images WHERE id=?", 'i', [$id]);
         // 联动删除本地存储的文件（本地上传的图片）
         try_delete_local_image($img['url']);
-        // 更新对应用户的上传计数
+        // 更新对应用户的上传计数（H7 修复：使用预处理语句，禁止 SQL 字符串拼接）
         if($img['user_id'] > 0) {
-            $DB->query("UPDATE eecms_users SET upload_count = GREATEST(0, upload_count - 1) WHERE id = ".intval($img['user_id']));
+            $DB->query_prepared("UPDATE eecms_users SET upload_count = GREATEST(0, upload_count - 1) WHERE id = ?", 'i', [$img['user_id']]);
         }
         json_exit(0, '图片已删除');
     }
@@ -310,22 +311,50 @@ html,body{height:100%;margin:0}body{overflow:auto}.admin-content{padding:16px 20
 
 </div>
 
-<script defer src="style/js/jquery.min.js"></script>
-<script defer src="style/js/sweetalert2.min.js"></script>
+<script src="style/js/jquery.min.js"></script>
+<script src="style/js/sweetalert2.min.js"></script>
 <script>
 var CSRF_TOKEN = '<?php echo csrf_token();?>';
+// M5 修复：CSRF Token 统一通过 Header 传递，不再放 POST Body
+$.ajaxSetup({ beforeSend: function(xhr){ xhr.setRequestHeader('X-CSRF-Token', CSRF_TOKEN); } });
 var _currentPage = 1;
 var _globalStats = {total_images: 0, total_size: 0, total_users: 0};
 
 window.addEventListener('DOMContentLoaded', function(){
     loadGlobalStats();
     loadImages(1);
+
+    // H2 修复：使用事件委托替代内联 onclick/onchange，避免字符串拼接导致 XSS
+    // 图片卡片复选框切换（委托到 grid 容器）
+    $('#imgGrid').on('change', '.img-check', function(){
+        var id = parseInt($(this).data('id'), 10);
+        if(!isNaN(id)) toggleRow(id, this.checked);
+    });
+    // 复制链接按钮
+    $('#imgGrid').on('click', '.act-copy-url', function(){
+        var url = $(this).data('url') || '';
+        copyUrl(url);
+    });
+    // 删除图片按钮
+    $('#imgGrid').on('click', '.act-delete-img', function(){
+        var id = parseInt($(this).data('id'), 10);
+        var filename = $(this).data('filename') || '';
+        if(!isNaN(id)) deleteImage(id, filename);
+    });
+    // 分页链接（委托到分页容器）
+    $('#imgPagination').on('click', '.page-link', function(e){
+        e.preventDefault();
+        var li = $(this).closest('.page-item');
+        if(li.hasClass('disabled')) return;
+        var page = parseInt($(this).data('page'), 10);
+        if(!isNaN(page) && page > 0) loadImages(page);
+    });
 });
 
 function loadGlobalStats(){
     $.ajax({
         url: 'images.php', type: 'POST', dataType: 'json',
-        data: { action: 'stats', csrf_token: CSRF_TOKEN },
+        data: { action: 'stats' },
         success: function(res){
             if(res.code === 0){
                 _globalStats = res.data;
@@ -381,8 +410,7 @@ function loadImages(page){
             user_id: $('#userFilter').val(),
             search: $('#searchInput').val(),
             date_from: $('#dateFrom').val(),
-            date_to: $('#dateTo').val(),
-            csrf_token: CSRF_TOKEN
+            date_to: $('#dateTo').val()
         },
         success: function(res){
             if(res.code === 0){
@@ -435,8 +463,10 @@ function renderGrid(data){
         var isChecked = _selectedIds.has(img.id);
         var checkedAttr = isChecked ? ' checked' : '';
         var selectedClass = isChecked ? ' selected' : '';
-        var checkHtml = '<input type="checkbox" class="img-check" value="'+img.id+'"'+checkedAttr+' onchange="toggleRow('+img.id+', this.checked)" title="选择">';
+        // H2 修复：移除内联 onchange，改用 data-id + 事件委托
+        var checkHtml = '<input type="checkbox" class="img-check" value="'+img.id+'"'+checkedAttr+' data-id="'+img.id+'" title="选择">';
 
+        // H2 修复：移除内联 onclick，改用 data 属性 + 事件委托，避免字符串拼接导致 XSS
         var card = '<div class="img-card'+selectedClass+'">' +
             '<div class="img-thumb">' +
                 thumbHtml +
@@ -458,8 +488,8 @@ function renderGrid(data){
             '</div>' +
             '<div class="img-actions">' +
                 '<a href="'+escHtml(safeUrl(img.url))+'" target="_blank" rel="noopener" class="btn btn-outline-primary" title="查看"><i class="mdi mdi-eye-outline"></i></a>' +
-                '<button type="button" class="btn btn-outline-info" onclick="copyUrl(\''+escHtml(img.url).replace(/'/g,"\\'")+'\')" title="复制链接"><i class="mdi mdi-content-copy"></i></button>' +
-                '<button type="button" class="btn btn-outline-danger" onclick="deleteImage('+img.id+',\''+escHtml(img.filename).replace(/'/g,"\\'")+'\')" title="删除"><i class="mdi mdi-delete"></i></button>' +
+                '<button type="button" class="btn btn-outline-info act-copy-url" data-url="'+escHtml(img.url)+'" title="复制链接"><i class="mdi mdi-content-copy"></i></button>' +
+                '<button type="button" class="btn btn-outline-danger act-delete-img" data-id="'+img.id+'" data-filename="'+escHtml(img.filename)+'" title="删除"><i class="mdi mdi-delete"></i></button>' +
             '</div>' +
         '</div>';
         grid.append(card);
@@ -554,7 +584,7 @@ function batchDeleteSelected(){
         if(result.isConfirmed){
             $.ajax({
                 url:'images.php', type:'POST', dataType:'json',
-                data:{ action:'delete_selected', ids:ids, csrf_token:CSRF_TOKEN },
+                data:{ action:'delete_selected', ids:ids },
                 success:function(res){
                     if(res.code === 0){
                         toast('success', res.msg);
@@ -577,21 +607,22 @@ function renderPagination(data){
     if(data.totalPages <= 1) return;
     var nav = $('<nav><ul class="pagination mb-0"></ul></nav>');
     var ul = nav.find('ul');
-    ul.append('<li class="page-item '+(data.page<=1?'disabled':'')+'"><a class="page-link" href="javascript:void(0)" onclick="loadImages('+(data.page-1)+')">上一页</a></li>');
+    // H2 修复：移除内联 onclick，改用 data-page + 事件委托
+    ul.append('<li class="page-item '+(data.page<=1?'disabled':'')+'"><a class="page-link" href="javascript:void(0)" data-page="'+(data.page-1)+'">上一页</a></li>');
     var start = Math.max(1, data.page - 2);
     var end = Math.min(data.totalPages, data.page + 2);
     if(start > 1){
-        ul.append('<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="loadImages(1)">1</a></li>');
+        ul.append('<li class="page-item"><a class="page-link" href="javascript:void(0)" data-page="1">1</a></li>');
         if(start > 2) ul.append('<li class="page-item disabled"><span class="page-link">...</span></li>');
     }
     for(var p = start; p <= end; p++){
-        ul.append('<li class="page-item '+(p===data.page?'active':'')+'"><a class="page-link" href="javascript:void(0)" onclick="loadImages('+p+')">'+p+'</a></li>');
+        ul.append('<li class="page-item '+(p===data.page?'active':'')+'"><a class="page-link" href="javascript:void(0)" data-page="'+p+'">'+p+'</a></li>');
     }
     if(end < data.totalPages){
         if(end < data.totalPages - 1) ul.append('<li class="page-item disabled"><span class="page-link">...</span></li>');
-        ul.append('<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="loadImages('+data.totalPages+')">'+data.totalPages+'</a></li>');
+        ul.append('<li class="page-item"><a class="page-link" href="javascript:void(0)" data-page="'+data.totalPages+'">'+data.totalPages+'</a></li>');
     }
-    ul.append('<li class="page-item '+(data.page>=data.totalPages?'disabled':'')+'"><a class="page-link" href="javascript:void(0)" onclick="loadImages('+(data.page+1)+')">下一页</a></li>');
+    ul.append('<li class="page-item '+(data.page>=data.totalPages?'disabled':'')+'"><a class="page-link" href="javascript:void(0)" data-page="'+(data.page+1)+'">下一页</a></li>');
     box.append(nav);
 }
 
@@ -634,7 +665,7 @@ function deleteImage(id, filename){
         if(result.isConfirmed){
             $.ajax({
                 url: 'images.php', type: 'POST', dataType: 'json',
-                data: { action: 'delete', id: id, csrf_token: CSRF_TOKEN },
+                data: { action: 'delete', id: id },
                 success: function(res){
                     if(res.code === 0){
                         toast('success', res.msg);

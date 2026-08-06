@@ -13,56 +13,8 @@ require('../inc/lang.php');
 require('../inc/common.php');
 if(!isset($islogin) || $islogin!=1) exit('<script>parent.location.href="login.php";</script>');
 
-// ========== 接口配置（与前端 index.php 保持一致，用于显示可选图床接口）==========
-$apiConfig = array(
-    'cfbed'=>array('name'=>'自建图床', 'max_size'=>100),
-    '360'=>array('name'=>'360图床', 'max_size'=>10),
-    'local'=>array('name'=>'本地上传', 'max_size'=>10),
-    'chevereto'=>array('name'=>'PlcGO图床', 'max_size'=>10),
-    'zhongzhuan'=>array('name'=>'凌云图床', 'max_size'=>10),
-    'phototourl'=>array('name'=>'PHOTO图床', 'max_size'=>10),
-    'img520'=>array('name'=>'IMG520图床', 'max_size'=>10),
-    'imgloc'=>array('name'=>'IMGLOC图床', 'max_size'=>10),
-    'locimg'=>array('name'=>'LOC图床', 'max_size'=>10),
-    'jisu'=>array('name'=>'极速图床', 'max_size'=>3),
-    'yopngs'=>array('name'=>'有图床', 'max_size'=>10),
-    'feria'=>array('name'=>'风筝图床', 'max_size'=>10),
-    'gurl'=>array('name'=>'Telegraph图床', 'max_size'=>5),
-    'ljpic'=>array('name'=>'云间图床', 'max_size'=>3),
-    'nickyam'=>array('name'=>'Telegraph2图床', 'max_size'=>5),
-    'dogimg'=>array('name'=>'狗狗图床', 'max_size'=>10),
-    'matu'=>array('name'=>'宝马图床', 'max_size'=>10),
-    'pnglog'=>array('name'=>'盘络图床', 'max_size'=>5),
-    'lvse'=>array('name'=>'绿色图床', 'max_size'=>5),
-    'fatcat'=>array('name'=>'肥喵图床', 'max_size'=>10),
-    '131img'=>array('name'=>'131图床', 'max_size'=>20),
-    'feimg'=>array('name'=>'FE图床', 'max_size'=>64),
-    'yootn'=>array('name'=>'友藤图床', 'max_size'=>20),
-    'czl'=>array('name'=>'CZL图床', 'max_size'=>0.5),
-    'tutu'=>array('name'=>'TUTU图床', 'max_size'=>5),
-    'uuimg'=>array('name'=>'悠悠图床', 'max_size'=>4997),
-    'tuwu'=>array('name'=>'图屋图床', 'max_size'=>20),
-    'urusai'=>array('name'=>'UR图床', 'max_size'=>64),
-    'imgcc'=>array('name'=>'云图床', 'max_size'=>10),
-    'imgdata'=>array('name'=>'ImgURL图床', 'max_size'=>10),
-    'pngcdn'=>array('name'=>'云朵图床', 'max_size'=>10),
-    'naixiai'=>array('name'=>'奶昔图床', 'max_size'=>10),
-    'yiyunt'=>array('name'=>'怡云图床', 'max_size'=>10),
-    'scdn'=>array('name'=>'SCDN图床', 'max_size'=>20),
-    'imgbb'=>array('name'=>'ImgBB图床', 'max_size'=>32),
-    'imgurla'=>array('name'=>'Imgur.LA图床', 'max_size'=>10),
-    'helloimg'=>array('name'=>'Hello图床', 'max_size'=>10),
-    'stardots'=>array('name'=>'StarDots图床', 'max_size'=>10),
-    'remit'=>array('name'=>'Remit图床', 'max_size'=>10),
-    'alibaba'=>array('name'=>'阿里巴巴图床', 'max_size'=>10),
-    'beeimg'=>array('name'=>'蜜蜂图床', 'max_size'=>10),
-    'meituan'=>array('name'=>'美团创作图床', 'max_size'=>10),
-    'suning'=>array('name'=>'苏宁易购图床', 'max_size'=>10),
-    'meipai'=>array('name'=>'美拍网图床', 'max_size'=>10),
-    'alipay'=>array('name'=>'支付宝图床', 'max_size'=>10),
-    'youzan'=>array('name'=>'有赞图床', 'max_size'=>10),
-    'wentian'=>array('name'=>'WENTIAN', 'max_size'=>5),
-);
+// ========== 接口配置（统一配置源，与前端 index.php / api/upload.php 共用 get_api_config()） ==========
+$apiConfig = get_api_config();
 
 // ========== S3 存储配置（仅取 enabled==1 的，用于在分组中可选）==========
 $s3Configs = array();
@@ -91,24 +43,54 @@ if(isset($conf['s3_storage_configs']) && !empty($conf['s3_storage_configs'])) {
  */
 function saveGroupItems($DB, $groupId, $post) {
     $groupId = (int)$groupId;
-    pkg_safe_query_prepared($DB, "DELETE FROM eecms_api_group_items WHERE group_id=?", 'i', [$groupId]);
+    // H6 修复：$apiConfig 在全局作用域定义，函数内须 global 引入，否则 array_keys() 触发致命错误
+    //         历史缺陷：原代码在此处未声明 global，函数会在 DELETE 之后崩溃，导致旧绑定被清空却无法写入新绑定
+    global $apiConfig;
+    $validKeys = is_array($apiConfig) ? array_keys($apiConfig) : array();
 
-    // 图床接口绑定
-    $apis = isset($post['apis']) && is_array($post['apis']) ? $post['apis'] : array();
-    // 仅允许存在于 $apiConfig 中的合法 key，防止越权写入任意标识
-    $validKeys = array('cfbed','360','local','chevereto','zhongzhuan','phototourl','img520','imgloc','locimg','jisu','yopngs','feria','gurl','ljpic','nickyam','dogimg','matu','pnglog','lvse','fatcat','131img','feimg','yootn','czl','tutu','uuimg','tuwu','urusai','imgcc','imgdata','pngcdn','naixiai','yiyunt','scdn','imgbb','imgurla','helloimg','stardots','remit','alibaba','beeimg','meituan','suning','meipai','alipay','youzan','wentian');
-    foreach($apis as $api) {
-        if(!in_array($api, $validKeys, true)) continue;
-        $DB->query_prepared("INSERT INTO eecms_api_group_items (group_id, api_type, is_s3, s3_id) VALUES (?, ?, 0, 0)", 'is', [$groupId, $api]);
-    }
+    // H6 修复：事务保护「先删后插」原子性，任一 INSERT 失败则回滚，避免数据丢失
+    $txOk = @$DB->begin_transaction();
+    try {
+        $delOk = pkg_safe_query_prepared($DB, "DELETE FROM eecms_api_group_items WHERE group_id=?", 'i', [$groupId]);
+        if($delOk === false) {
+            if($txOk) @$DB->rollback();
+            error_log('[apigroups] saveGroupItems DELETE failed: group=' . $groupId . ' err=' . $DB->error());
+            return false;
+        }
 
-    // S3 存储绑定（s3_id 即为 S3 配置在 JSON 数组中的索引）
-    $s3ids = isset($post['s3_ids']) && is_array($post['s3_ids']) ? $post['s3_ids'] : array();
-    foreach($s3ids as $sid) {
-        $sid = (int)$sid;
-        if($sid < 0) continue;
-        $apiType = 's3:'.$sid;
-        $DB->query_prepared("INSERT INTO eecms_api_group_items (group_id, api_type, is_s3, s3_id) VALUES (?, ?, 1, ?)", 'isi', [$groupId, $apiType, $sid]);
+        // 图床接口绑定
+        $apis = isset($post['apis']) && is_array($post['apis']) ? $post['apis'] : array();
+        // H13 修复：从 $apiConfig 动态提取合法 key，避免硬编码白名单与配置不同步
+        foreach($apis as $api) {
+            if(!in_array($api, $validKeys, true)) continue;
+            $insOk = $DB->query_prepared("INSERT INTO eecms_api_group_items (group_id, api_type, is_s3, s3_id) VALUES (?, ?, 0, 0)", 'is', [$groupId, $api]);
+            if($insOk === false) {
+                if($txOk) @$DB->rollback();
+                error_log('[apigroups] saveGroupItems INSERT api failed: group=' . $groupId . ' api=' . $api . ' err=' . $DB->error());
+                return false;
+            }
+        }
+
+        // S3 存储绑定（s3_id 即为 S3 配置在 JSON 数组中的索引）
+        $s3ids = isset($post['s3_ids']) && is_array($post['s3_ids']) ? $post['s3_ids'] : array();
+        foreach($s3ids as $sid) {
+            $sid = (int)$sid;
+            if($sid < 0) continue;
+            $apiType = 's3:'.$sid;
+            $insOk = $DB->query_prepared("INSERT INTO eecms_api_group_items (group_id, api_type, is_s3, s3_id) VALUES (?, ?, 1, ?)", 'isi', [$groupId, $apiType, $sid]);
+            if($insOk === false) {
+                if($txOk) @$DB->rollback();
+                error_log('[apigroups] saveGroupItems INSERT s3 failed: group=' . $groupId . ' s3_id=' . $sid . ' err=' . $DB->error());
+                return false;
+            }
+        }
+
+        if($txOk) @$DB->commit();
+        return true;
+    } catch(Throwable $e) {
+        if($txOk) @$DB->rollback();
+        error_log('[apigroups] saveGroupItems failed: group=' . $groupId . ' err=' . $e->getMessage());
+        return false;
     }
 }
 
@@ -185,12 +167,17 @@ if(isset($_POST['action'])) {
         }
         $newId = $DB->insert_prepared("INSERT INTO eecms_api_groups (name, description) VALUES (?, ?)", 'ss', [$name, $description]);
         if(!$newId) {
-            echo json_encode(array('code'=>1, 'msg'=>'创建失败：'.$DB->error()));
+            // M1 修复：不向前端暴露数据库错误细节，仅记录到服务端日志
+            error_log('apigroups create failed: ' . $DB->error());
+            echo json_encode(array('code'=>1, 'msg'=>'分组创建失败，请重试'));
             exit;
         }
         // 若提交了接口绑定关系，一并保存
         if(isset($_POST['apis']) || isset($_POST['s3_ids'])) {
-            saveGroupItems($DB, $newId, $_POST);
+            if(saveGroupItems($DB, $newId, $_POST) === false) {
+                echo json_encode(array('code'=>1, 'msg'=>'接口绑定保存失败，请重试'));
+                exit;
+            }
         }
         $cnt = count_group_items_by_status($DB, $newId, $conf, $s3Configs);
         echo json_encode(array('code'=>0, 'msg'=>'分组创建成功', 'id'=>(int)$newId, 'items_count'=>$cnt['enabled'], 'items_total'=>$cnt['total']));
@@ -214,7 +201,10 @@ if(isset($_POST['action'])) {
             echo json_encode(array('code'=>1, 'msg'=>'分组更新失败，请重试！')); exit;
         }
         if(isset($_POST['apis']) || isset($_POST['s3_ids'])) {
-            saveGroupItems($DB, $id, $_POST);
+            if(saveGroupItems($DB, $id, $_POST) === false) {
+                echo json_encode(array('code'=>1, 'msg'=>'接口绑定保存失败，请重试'));
+                exit;
+            }
         }
         $cnt = count_group_items_by_status($DB, $id, $conf, $s3Configs);
         echo json_encode(array('code'=>0, 'msg'=>'分组更新成功', 'items_count'=>$cnt['enabled'], 'items_total'=>$cnt['total']));
@@ -253,7 +243,10 @@ if(isset($_POST['action'])) {
             echo json_encode(array('code'=>1, 'msg'=>'分组不存在'));
             exit;
         }
-        saveGroupItems($DB, $id, $_POST);
+        if(saveGroupItems($DB, $id, $_POST) === false) {
+            echo json_encode(array('code'=>1, 'msg'=>'接口绑定保存失败，请重试'));
+            exit;
+        }
         $cnt = count_group_items_by_status($DB, $id, $conf, $s3Configs);
         echo json_encode(array('code'=>0, 'msg'=>'接口绑定已保存', 'items_count'=>$cnt['enabled'], 'items_total'=>$cnt['total']));
         exit;
@@ -469,11 +462,13 @@ html,body{height:100%;margin:0}body{overflow:auto}.admin-content{padding:16px 20
   </div>
 </div>
 
-<script defer src="style/js/jquery.min.js"></script>
-<script defer src="style/js/bootstrap.min.js"></script>
-<script defer src="style/js/sweetalert2.min.js"></script>
+<script src="style/js/jquery.min.js"></script>
+<script src="style/js/bootstrap.min.js"></script>
+<script src="style/js/sweetalert2.min.js"></script>
 <script>
 var CSRF_TOKEN = '<?php echo csrf_token();?>';
+// M5 修复：CSRF Token 统一通过 Header 传递，不再放 POST Body
+$.ajaxSetup({ beforeSend: function(xhr){ xhr.setRequestHeader('X-CSRF-Token', CSRF_TOKEN); } });
 var groupsData = [];
 
 // HTML 转义（用于安全渲染用户输入内容）
@@ -552,7 +547,7 @@ function toast(type, msg, timer){
 function loadGroups(){
     $.ajax({
         url:'', type:'POST',
-        data:{action:'list', csrf_token:CSRF_TOKEN},
+        data:{action:'list'},
         dataType:'json',
         success:function(resp){
             if(resp.code === 0){
@@ -638,7 +633,7 @@ function saveGroup(){
         $('#groupName').trigger('focus');
         return;
     }
-    var data = {action: isEdit ? 'update' : 'create', csrf_token:CSRF_TOKEN, name:name, description:desc};
+    var data = {action: isEdit ? 'update' : 'create', name:name, description:desc};
     if(isEdit) data.id = id;
     $.ajax({
         url:'', type:'POST', data:data, dataType:'json',
@@ -678,7 +673,7 @@ function openItemsModal(id){
             // 单次 AJAX 请求同时获取：接口实时启用状态 + 当前分组的绑定关系
             $.ajax({
                 url:'', type:'POST',
-                data:{action:'get_items_with_status', group_id:id, csrf_token:CSRF_TOKEN},
+                data:{action:'get_items_with_status', group_id:id},
                 dataType:'json',
                 success:function(resp){
                     if(resp.code !== 0){
@@ -718,7 +713,7 @@ function openItemsModal(id){
             $(c).find('input.s3-check:checked').each(function(){ s3ids.push($(this).val()); });
             return $.ajax({
                 url:'', type:'POST',
-                data:{action:'save_items', group_id:id, apis:apis, s3_ids:s3ids, csrf_token:CSRF_TOKEN},
+                data:{action:'save_items', group_id:id, apis:apis, s3_ids:s3ids},
                 dataType:'json'
             }).then(function(resp){
                 if(resp.code !== 0){
@@ -776,7 +771,7 @@ function deleteGroup(id){
         if(!result.isConfirmed) return;
         $.ajax({
             url:'', type:'POST',
-            data:{action:'delete', id:id, csrf_token:CSRF_TOKEN},
+            data:{action:'delete', id:id},
             dataType:'json',
             success:function(resp){
                 if(resp.code === 0){

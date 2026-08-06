@@ -11,7 +11,8 @@ CREATE TABLE `eecms_config` (
 
 -- 核心设置
 INSERT INTO `eecms_config` VALUES ('admin_user', 'admin');
-INSERT INTO `eecms_config` VALUES ('admin_pwd', '123456');
+-- H1 修复：废除明文弱密码 123456，初始留空，由安装向导 Step 5「管理员账户设置」用 password_hash() 写入（规范 § 8.2.3）
+INSERT INTO `eecms_config` VALUES ('admin_pwd', '');
 INSERT INTO `eecms_config` VALUES ('title', '网站标题');
 INSERT INTO `eecms_config` VALUES ('keywords', '网站关键词');
 INSERT INTO `eecms_config` VALUES ('description', '网站描述');
@@ -54,9 +55,6 @@ INSERT INTO `eecms_config` VALUES ('api_zhongzhuan_alias', '');
 
 INSERT INTO `eecms_config` VALUES ('api_phototourl_enable', '0');
 INSERT INTO `eecms_config` VALUES ('api_phototourl_alias', '');
-
-INSERT INTO `eecms_config` VALUES ('api_img520_enable', '0');
-INSERT INTO `eecms_config` VALUES ('api_img520_alias', '');
 
 INSERT INTO `eecms_config` VALUES ('api_imgloc_enable', '0');
 INSERT INTO `eecms_config` VALUES ('api_imgloc_alias', '');
@@ -201,6 +199,30 @@ INSERT INTO `eecms_config` VALUES ('api_youzan_enable', '0');
 INSERT INTO `eecms_config` VALUES ('api_youzan_sid', '');
 INSERT INTO `eecms_config` VALUES ('api_youzan_category', '');
 INSERT INTO `eecms_config` VALUES ('api_youzan_alias', '');
+
+-- M7 修复：补齐 wentian 启用开关配置项（原缺失导致该接口既无法启用也无法通过 is_api_enabled 校验）
+INSERT INTO `eecms_config` VALUES ('api_wentian_enable', '0');
+
+INSERT INTO `eecms_config` VALUES ('api_imgw_enable', '0');
+INSERT INTO `eecms_config` VALUES ('api_imgw_token', '');
+INSERT INTO `eecms_config` VALUES ('api_imgw_alias', '');
+
+INSERT INTO `eecms_config` VALUES ('api_xwyue_enable', '0');
+INSERT INTO `eecms_config` VALUES ('api_xwyue_alias', '');
+
+INSERT INTO `eecms_config` VALUES ('api_keye_enable', '0');
+INSERT INTO `eecms_config` VALUES ('api_keye_alias', '');
+
+INSERT INTO `eecms_config` VALUES ('api_shaitu_enable', '0');
+INSERT INTO `eecms_config` VALUES ('api_shaitu_alias', '');
+
+INSERT INTO `eecms_config` VALUES ('api_guaigua_enable', '0');
+INSERT INTO `eecms_config` VALUES ('api_guaigua_alias', '');
+
+INSERT INTO `eecms_config` VALUES ('api_imgtolink_enable', '0');
+INSERT INTO `eecms_config` VALUES ('api_imgtolink_alias', '');
+INSERT INTO `eecms_config` VALUES ('api_imgtolink_anonymous_id', '');
+INSERT INTO `eecms_config` VALUES ('api_imgtolink_directory_id', '');
 
 -- S3 存储配置（JSON 数组，空字符串表示无配置）
 INSERT INTO `eecms_config` VALUES ('s3_storage_configs', '');

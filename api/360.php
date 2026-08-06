@@ -108,7 +108,7 @@ if(!defined("UPLOAD_GATE")){header("HTTP/1.1 403 Forbidden");exit("Forbidden");}
             $uploadimg = curl_exec($ch);
             
             // 关闭请求
-            curl_close($ch);
+            unset($ch);
             
             // 解析请求结果
             $imgData = json_decode($uploadimg, true);

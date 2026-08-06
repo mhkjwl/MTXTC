@@ -17,17 +17,8 @@ if(!isset($islogin) || $islogin!=1) exit('<script>parent.location.href="login.ph
 $sensitiveFields = ['admin_user', 'admin_pwd', 'security_key', 'smtp_pass', 's3_secret_key', 's3_storage_configs'];
 
 // 各图床默认单文件大小限制（MB），后台留空时前端使用此值
-$apiMaxSizes = array(
-    'cfbed'=>100,'360'=>10,'local'=>10,'chevereto'=>10,'zhongzhuan'=>10,
-    'phototourl'=>10,'img520'=>10,'imgloc'=>10,'locimg'=>10,'jisu'=>3,
-    'yopngs'=>10,'feria'=>10,'gurl'=>5,'ljpic'=>3,'nickyam'=>5,
-    'dogimg'=>10,'matu'=>10,'pnglog'=>5,'lvse'=>5,'fatcat'=>10,
-    '131img'=>20,'feimg'=>64,'yootn'=>20,'czl'=>0.5,'tutu'=>5,'uuimg'=>4997,'tuwu'=>20,'urusai'=>64,
-    'imgcc'=>10,'imgdata'=>10,'pngcdn'=>10,'naixiai'=>10,'yiyunt'=>10,
-    'scdn'=>20,'imgbb'=>32,'imgurla'=>10,'helloimg'=>10,'stardots'=>10,
-    'remit'=>10,'alibaba'=>10,'beeimg'=>10,'meituan'=>10,'suning'=>10,
-    'meipai'=>10,'alipay'=>10,'youzan'=>10,'wentian'=>5,
-);
+// 统一配置源：从 get_api_config() 派生，避免与接口列表不同步
+$apiMaxSizes = array_map(function($cfg) { return $cfg['max_size']; }, get_api_config());
 
 /**
  * 接口定义表：每个图床接口的元数据与字段配置。
@@ -63,9 +54,6 @@ $apiInterfaces = array(
     )),
     'phototourl'=>array('name'=>'PHOTO图床','icon'=>'mdi-camera-outline','info'=>'PHOTO图床通过抓包技术获取，免注册匿名上传，每天 <strong>10次</strong>，单文件限制 <strong>2MB</strong>。图片存储于 Cloudflare R2。','default_enable'=>'0','fields'=>array(
         array('name'=>'note','label'=>'说明','type'=>'text','disabled'=>'抓包技术获取，匿名上传，存储于Cloudflare R2','col'=>6),
-    )),
-    'img520'=>array('name'=>'IMG520图床','icon'=>'mdi-image-multiple-outline','info'=>'IMG520图床基于 Lsky Pro 程序，使用 API v1 游客模式上传，无需注册和 Token，总储存 1GB。单文件限制 <strong>10MB</strong>。','default_enable'=>'0','fields'=>array(
-        array('name'=>'note','label'=>'说明','type'=>'text','disabled'=>'Lsky Pro程序图床，API v1游客上传，无需Token','col'=>6),
     )),
     'imgloc'=>array('name'=>'IMGLOC图床','icon'=>'mdi-image-outline','info'=>'IMGLOC图床通过抓包技术获取，免注册匿名上传，两步验证（获取Token→上传），Token 有效期 1 小时。限制 <strong>60张/每小时</strong>，单文件限制 <strong>10MB</strong>，所有图片默认保存 1 年。','default_enable'=>'0','fields'=>array(
         array('name'=>'note','label'=>'说明','type'=>'text','disabled'=>'抓包技术获取，两步验证，60张/每小时','col'=>6),
@@ -191,6 +179,27 @@ $apiInterfaces = array(
     'wentian'=>array('name'=>'WENTIAN图床','icon'=>'mdi-cloud-outline','info'=>'WENTIAN图床基于兰空图床（Lsky Pro），免注册匿名上传，自动获取 CSRF Token 和 Session。单文件限制 <strong>5MB</strong>。','default_enable'=>'0','fields'=>array(
         array('name'=>'note','label'=>'说明','type'=>'text','disabled'=>'兰空图床(Lsky Pro)，免登录，自动CSRF验证，5MB限制','col'=>6),
     )),
+    'imgw'=>array('name'=>'图网图床','icon'=>'mdi-cloud-upload-outline','info'=>'前往 <a href="https://www.imgw.cc/" target="_blank">图网图床官网</a> 注册后，在「授权相关 → 生成 Token」获取 Bearer Token。总存储容量 <strong>1GB</strong>，单文件限制 <strong>30MB</strong>。','default_enable'=>'0','fields'=>array(
+        array('name'=>'token','label'=>'Bearer Token','type'=>'password','col'=>6,'placeholder'=>'1|xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'),
+        array('name'=>'alias','label'=>'别名（可选）','type'=>'text','col'=>6,'placeholder'=>'留空显示默认名称'),
+    )),
+    'xwyue'=>array('name'=>'星跃图床','icon'=>'mdi-cloud-upload','info'=>'免登录匿名上传，无需 Token。单文件限制 <strong>20MB</strong>。','default_enable'=>'0','fields'=>array(
+        array('name'=>'alias','label'=>'别名（可选）','type'=>'text','col'=>6,'placeholder'=>'留空显示默认名称'),
+    )),
+    'keye'=>array('name'=>'珂艺云图床','icon'=>'mdi-cloud-sync','info'=>'免登录匿名上传，内部自动生成 JWT 鉴权。单文件限制 <strong>100MB</strong>。','default_enable'=>'0','fields'=>array(
+        array('name'=>'alias','label'=>'别名（可选）','type'=>'text','col'=>6,'placeholder'=>'留空显示默认名称'),
+    )),
+    'shaitu'=>array('name'=>'晒图床','icon'=>'mdi-image-multiple','info'=>'基于 Chevereto 程序，免登录匿名上传，无需 Token/Cookie。单文件限制 <strong>10MB</strong>。','default_enable'=>'0','fields'=>array(
+        array('name'=>'alias','label'=>'别名（可选）','type'=>'text','col'=>6,'placeholder'=>'留空显示默认名称'),
+    )),
+    'guaigua'=>array('name'=>'乖乖图床','icon'=>'mdi-emoticon-happy','info'=>'免登录匿名上传，无需 Token/Cookie，支持 JPG/PNG/GIF/WEBP/AVIF。单文件限制 <strong>10MB</strong>。','default_enable'=>'0','fields'=>array(
+        array('name'=>'alias','label'=>'别名（可选）','type'=>'text','col'=>6,'placeholder'=>'留空显示默认名称'),
+    )),
+    'imgtolink'=>array('name'=>'LINK图床','icon'=>'mdi-link-variant','info'=>'基于腾讯云COS的免登录匿名图床，采用预签名URL直传。只需填写 anonymousId（浏览器访问 imgto.link 免费图床页面 → F12 → Application → Local Storage → 读取 <code>imgto_link_anonymous_id</code>），directoryId 将<strong>自动获取</strong>。单文件限制 <strong>5MB</strong>。','default_enable'=>'0','fields'=>array(
+        array('name'=>'anonymous_id','label'=>'匿名用户ID（anonymousId）','type'=>'text','required'=>true,'col'=>6,'placeholder'=>'浏览器 Local Storage 中的 imgto_link_anonymous_id 值'),
+        array('name'=>'directory_id','label'=>'目录ID（directoryId）','type'=>'text','required'=>true,'col'=>6,'placeholder'=>'自动获取，或手动填写纯数字'),
+        array('name'=>'alias','label'=>'别名（可选）','type'=>'text','col'=>6,'placeholder'=>'留空显示默认名称'),
+    )),
 );
 
 $api_default = isset($conf['api_default']) ? $conf['api_default'] : 'local';
@@ -275,6 +284,12 @@ if(isset($_POST['action'])) {
             echo json_encode(['code'=>1, 'msg'=>'接口不存在']);
             exit;
         }
+        // M10 修复：禁止将已禁用的接口设为默认，否则前台用户上传会走不可用接口
+        $enableVal = isset($conf['api_'.$key.'_enable']) ? $conf['api_'.$key.'_enable'] : '0';
+        if($enableVal !== '1') {
+            echo json_encode(['code'=>1, 'msg'=>'该接口当前已禁用，请先启用再设为默认']);
+            exit;
+        }
         $ok = $DB->query_prepared("INSERT INTO eecms_config SET `name`=?, `main`=? ON DUPLICATE KEY UPDATE `main`=?", 'sss', ['api_default', $key, $key]);
         if($ok === false) {
             echo json_encode(['code'=>1, 'msg'=>'默认接口设置失败，请重试！']);
@@ -283,6 +298,77 @@ if(isset($_POST['action'])) {
         $conf['api_default'] = $key;
         $api_default = $key;
         echo json_encode(['code'=>0, 'msg'=>'已将「'.$apiInterfaces[$key]['name'].'」设为默认接口']);
+        exit;
+    }
+
+    // ---- fetch_imgtolink_dir：根据 anonymousId 实时查询 directoryId ----
+    if($action === 'fetch_imgtolink_dir') {
+        $anonId = isset($_POST['anonymous_id']) ? trim($_POST['anonymous_id']) : '';
+        if($anonId === '' || strlen($anonId) < 30) {
+            echo json_encode(['code'=>1, 'msg'=>'匿名ID格式不正确']);
+            exit;
+        }
+        // H4 修复：anonymousId 做字符集白名单校验 + URL/Cookie 编码，防止注入 & # 换行符污染
+        if(!preg_match('/^[a-zA-Z0-9_\-]{30,128}$/', $anonId)) {
+            echo json_encode(['code'=>1, 'msg'=>'匿名ID含非法字符']);
+            exit;
+        }
+        $anonIdEnc = urlencode($anonId);
+        // 调用 imgto.link API 查询目录列表（H4 修复：启用 SSL 证书校验，使用项目内置 CA 包）
+        $ch = curl_init();
+        curl_setopt_array($ch, [
+            CURLOPT_URL => 'https://imgto.link/api/v1/directories?anonymousId=' . $anonIdEnc,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => [
+                'accept: application/json',
+                'content-type: application/json',
+                'Origin: https://imgto.link',
+                'Referer: https://imgto.link/zh-CN/free-image-hosting',
+            ],
+            CURLOPT_COOKIE => 'imgto_link_anonymous_id=' . $anonIdEnc . '; NEXT_LOCALE=zh-CN',
+            CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0',
+            CURLOPT_TIMEOUT => 10,
+        ]);
+        curl_setup_ssl($ch);
+        $resp = curl_exec($ch);
+        $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err = curl_error($ch);
+        unset($ch);
+
+        if($err !== '') {
+            echo json_encode(['code'=>1, 'msg'=>'网络错误：' . $err]);
+            exit;
+        }
+        if($http !== 200) {
+            echo json_encode(['code'=>1, 'msg'=>'imgto.link 返回 HTTP ' . $http]);
+            exit;
+        }
+        $data = json_decode($resp, true);
+        if(!is_array($data) || !isset($data['code']) || $data['code'] !== 200) {
+            echo json_encode(['code'=>1, 'msg'=>'imgto.link 返回异常']);
+            exit;
+        }
+        $dirs = isset($data['data']['directories']) ? $data['data']['directories'] : [];
+        if(!is_array($dirs) || count($dirs) === 0) {
+            echo json_encode(['code'=>1, 'msg'=>'该匿名ID未关联目录，请先在浏览器访问 imgto.link 免费图床页面激活']);
+            exit;
+        }
+        // 优先取 isDefault=true 的目录
+        $dirId = null;
+        $dirName = '';
+        foreach($dirs as $d) {
+            if(!empty($d['isDefault'])) {
+                $dirId = $d['id'];
+                $dirName = $d['name'];
+                break;
+            }
+        }
+        // 没有 default 则取第一个
+        if($dirId === null) {
+            $dirId = $dirs[0]['id'];
+            $dirName = $dirs[0]['name'];
+        }
+        echo json_encode(['code'=>0, 'directory_id'=>$dirId, 'directory_name'=>$dirName]);
         exit;
     }
 
@@ -428,12 +514,14 @@ html,body{height:100%;margin:0}body{overflow:auto}.admin-content{padding:16px 20
   </div>
 </div>
 
-<script defer src="style/js/jquery.min.js"></script>
-<script defer src="style/js/bootstrap.min.js"></script>
-<script defer src="style/js/sweetalert2.min.js"></script>
+<script src="style/js/jquery.min.js"></script>
+<script src="style/js/bootstrap.min.js"></script>
+<script src="style/js/sweetalert2.min.js"></script>
 <script>
 // CSRF 令牌
 var CSRF_TOKEN = '<?php echo csrf_token();?>';
+// M5 修复：CSRF Token 统一通过 Header 传递，不再放 POST Body
+$.ajaxSetup({ beforeSend: function(xhr){ xhr.setRequestHeader('X-CSRF-Token', CSRF_TOKEN); } });
 // 接口配置（静态结构）
 var API_CONFIG = <?php echo json_encode($apiInterfaces, JSON_UNESCAPED_UNICODE);?>;
 // 接口当前值（动态）
@@ -622,6 +710,71 @@ function openEdit(key){
         '</div>';
 
     $('#editFormBody').html(html);
+
+    // LINK图床：anonymousId 输入框旁加「自动获取」按钮
+    if(key === 'imgtolink'){
+        var anonInput = document.querySelector('input[name="api_imgtolink_anonymous_id"]');
+        var dirInput = document.querySelector('input[name="api_imgtolink_directory_id"]');
+        if(anonInput && dirInput){
+            // 把 anonymousId 输入框包装成 input-group，追加按钮
+            var anonWrap = anonInput.parentElement;
+            anonInput.outerHTML = '<div class="input-group">'+
+                '<input type="text" class="form-control" name="api_imgtolink_anonymous_id" value="'+escHtml(anonInput.value)+'" placeholder="'+escHtml(anonInput.placeholder)+'">'+
+                '<button type="button" class="btn btn-outline-primary" id="imgtolinkFetchBtn"><i class="mdi mdi-download-outline"></i> 自动获取</button>'+
+                '</div>';
+
+            // 在 directory_id 输入框下方加提示容器
+            var hint = document.createElement('div');
+            hint.style.cssText = 'font-size:12px;margin-top:4px;min-height:16px;';
+            dirInput.parentElement.appendChild(hint);
+
+            // 按钮点击触发获取
+            $('#imgtolinkFetchBtn').on('click', function(){
+                var val = document.querySelector('input[name="api_imgtolink_anonymous_id"]').value.trim();
+                if(val.length < 50){
+                    hint.textContent = '✗ 请先填写 anonymousId';
+                    hint.style.color = '#dc2626';
+                    return;
+                }
+                var $btn = $(this).prop('disabled', true);
+                var origHtml = $btn.html();
+                $btn.html('<span class="spinner-border spinner-border-sm"></span> 获取中...');
+                hint.textContent = '获取中...';
+                hint.style.color = '#94a3b8';
+                $.ajax({
+                    url: '',
+                    type: 'POST',
+                    dataType: 'json',
+                    data: {action:'fetch_imgtolink_dir', anonymous_id:val},
+                    success: function(res){
+                        if(res.code === 0){
+                            dirInput.value = res.directory_id;
+                            hint.textContent = '✓ 已自动获取（目录：' + escHtml(res.directory_name) + '）';
+                            hint.style.color = '#16a34a';
+                        } else {
+                            hint.textContent = '✗ ' + (res.msg || '获取失败，请手动填写');
+                            hint.style.color = '#dc2626';
+                        }
+                    },
+                    error: function(xhr, textStatus, errorThrown){
+                        var errMsg = '网络错误：' + textStatus;
+                        if(xhr.status) errMsg += ' (HTTP ' + xhr.status + ')';
+                        if(errorThrown) errMsg += ' ' + errorThrown;
+                        if(xhr.responseText){
+                            var t = xhr.responseText.replace(/<[^>]+>/g, '').substring(0, 150);
+                            if(t) errMsg += ' | ' + t;
+                        }
+                        hint.textContent = '✗ ' + errMsg;
+                        hint.style.color = '#dc2626';
+                    },
+                    complete: function(){
+                        $btn.prop('disabled', false).html(origHtml);
+                    }
+                });
+            });
+        }
+    }
+
     editModal.show();
 }
 
@@ -630,7 +783,7 @@ function saveEdit(){
     var key = $('#editKey').val();
     if(!key){ toast('error', '参数错误'); return; }
     var formData = $('#editForm').serializeArray();
-    var data = {action:'save', csrf_token:CSRF_TOKEN};
+    var data = {action:'save'};
     formData.forEach(function(item){ data[item.name] = item.value; });
 
     Swal.fire({
@@ -683,7 +836,7 @@ function toggleEnable(key){
         if(!result.isConfirmed) return;
         $.ajax({
             url:'', type:'POST',
-            data:{action:'toggle_enable', key:key, csrf_token:CSRF_TOKEN},
+            data:{action:'toggle_enable', key:key},
             dataType:'json',
             success:function(resp){
                 if(resp.code === 0){
@@ -715,7 +868,7 @@ function batchSet(value){
         if(!result.isConfirmed) return;
         $.ajax({
             url:'', type:'POST',
-            data:{action:'batch_set_enable', keys:keys, value:value, csrf_token:CSRF_TOKEN},
+            data:{action:'batch_set_enable', keys:keys, value:value},
             dataType:'json',
             success:function(resp){
                 if(resp.code === 0){
@@ -750,7 +903,7 @@ function setDefault(key){
         if(!result.isConfirmed) return;
         $.ajax({
             url:'', type:'POST',
-            data:{action:'set_default', key:key, csrf_token:CSRF_TOKEN},
+            data:{action:'set_default', key:key},
             dataType:'json',
             success:function(resp){
                 if(resp.code === 0){

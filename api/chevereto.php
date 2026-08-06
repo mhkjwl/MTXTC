@@ -106,7 +106,7 @@ $uploadimg = curl_exec($ch);
 $curlErr = curl_error($ch);
 $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $contentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
-curl_close($ch);
+unset($ch);
 
 // 删除临时文件
 @unlink($filepath);
