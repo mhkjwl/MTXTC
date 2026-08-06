@@ -107,9 +107,6 @@ if(!$isSuperAdmin) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>用户中心 - <?php echo htmlspecialchars($siteName);?></title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link href="../admin/style/css/materialdesignicons.min.css" rel="stylesheet">
   <link href="../bd/qd.css" rel="stylesheet">
   <style>
@@ -155,7 +152,7 @@ if(!$isSuperAdmin) {
     [data-theme="dark"] .result-link input{background:rgba(30,26,46,0.8)}
 
     /* ============ 集成样式 ============ */
-    body{font-family:"Inter","Noto Sans SC","Segoe UI",sans-serif}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei","Helvetica Neue",Arial,sans-serif}
 
     /* 移动端侧边栏 */
     .menu-toggle{display:none;position:fixed;top:16px;left:16px;z-index:200;width:44px;height:44px;border-radius:14px;border:0;background:var(--panel-strong);box-shadow:var(--shadow);cursor:pointer;font-size:20px;color:var(--text)}
@@ -265,7 +262,7 @@ if(!$isSuperAdmin) {
     .result-wrap{margin-top:20px;display:none}
     .result-success{padding:18px;border-radius:18px;background:rgba(82,216,162,0.08);border:1px solid rgba(82,216,162,0.2)}
     .result-link{display:flex;gap:10px;align-items:center;margin-top:8px}
-    .result-link input{flex:1;padding:12px 16px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,0.8);font-family:"JetBrains Mono",monospace;font-size:0.88rem;color:var(--text)}
+    .result-link input{flex:1;padding:12px 16px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,0.8);font-family:"SF Mono",Consolas,Monaco,Menlo,"Courier New",monospace;font-size:0.88rem;color:var(--text)}
     .result-error{padding:18px;border-radius:18px;background:rgba(255,127,168,0.08);border:1px solid rgba(255,127,168,0.2);color:#e53e6b;margin-top:12px}
 
     /* 个人信息卡片 */
@@ -358,7 +355,7 @@ if(!$isSuperAdmin) {
     .ak-item .ak-icon{width:40px;height:40px;border-radius:12px;background:var(--gradient-soft);display:flex;align-items:center;justify-content:center;color:var(--primary);font-size:20px;flex-shrink:0}
     .ak-item .ak-info{flex:1;min-width:0}
     .ak-item .ak-name{font-weight:600;font-size:0.92rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .ak-item .ak-meta{font-size:0.8rem;color:var(--primary);margin-top:3px;font-family:"JetBrains Mono",monospace}
+    .ak-item .ak-meta{font-size:0.8rem;color:var(--primary);margin-top:3px;font-family:"SF Mono",Consolas,Monaco,Menlo,"Courier New",monospace}
     .ak-item .ak-time{font-size:0.76rem;color:var(--muted);margin-top:3px}
     .ak-item .ak-status{font-size:0.78rem;font-weight:600;min-width:60px;text-align:center;padding:4px 10px;border-radius:999px;flex-shrink:0}
     .ak-item .ak-status.on{background:rgba(82,216,162,0.14);color:#22a36d}
@@ -417,7 +414,7 @@ if(!$isSuperAdmin) {
     .notice-modal-btn{padding:12px 24px;border-radius:14px;border:0;background:var(--gradient-main);color:#fff;font-weight:600;cursor:pointer}
 
     /* 时钟（topbar 内） */
-    #clockDisplay{font-size:0.82rem;color:var(--muted);font-family:"JetBrains Mono",monospace;white-space:nowrap;display:flex;align-items:center}
+    #clockDisplay{font-size:0.82rem;color:var(--muted);font-family:"SF Mono",Consolas,Monaco,Menlo,"Courier New",monospace;white-space:nowrap;display:flex;align-items:center}
 
     /* 主题切换按钮 */
     #themeToggle{width:40px;height:40px;border-radius:12px;border:0;background:rgba(255,255,255,0.7);color:var(--text);cursor:pointer;font-size:20px;display:flex;align-items:center;justify-content:center;transition:background .2s ease;flex-shrink:0}

@@ -1,10 +1,11 @@
 <?php
 /**
  * @file changelog.php
- * @description 后台更新日志页面，解析 docs/版本日志.md 并以卡片时间线形式展示各版本变更记录
+ * @description 后台更新日志页面：仅展示远程在线更新（版本对比 + 更新日志 + 一键升级，对接 gxrz 管理主站），
+ *              不包含本地开发日志（docs/版本日志.md 为开发文档，含敏感信息，严禁暴露公网）
  * @author AI
- * @version 1.3.6-dev
- * @date 2026-08-05
+ * @version 1.3.9-dev
+ * @date 2026-08-07
  */
 declare(strict_types=1);
 
@@ -13,117 +14,403 @@ require('../inc/lang.php');
 require('../inc/common.php');
 if(!isset($islogin) || $islogin!=1) exit('<script>parent.location.href="login.php";</script>');
 
-/**
- * 解析版本日志 Markdown 文件为结构化数组
- *
- * @param string $filePath 版本日志文件路径
- * @return array<int,array{version:string,date:string,fields:array<string,string>,details:array<int,array{file:string,op:string,desc:string}>}>
- */
-function parse_changelog(string $filePath): array
-{
-    if(!file_exists($filePath)){
-        return [];
-    }
-    $content = file_get_contents($filePath);
-    if($content === false || $content === ''){
-        return [];
-    }
-
-    // 按 ## [x.y.z] - YYYY-MM-DD 切分条目
-    $pattern = '/^##\s*\[([^\]]+)\]\s*-\s*(\d{4}-\d{2}-\d{2})/m';
-    if(!preg_match_all($pattern, $content, $headers, PREG_OFFSET_CAPTURE)){
-        return [];
-    }
-
-    $entries = [];
-    $headerCount = count($headers[0]);
-    for($i = 0; $i < $headerCount; $i++){
-        $version = $headers[1][$i][0];
-        $date    = $headers[2][$i][0];
-        $start   = $headers[0][$i][1] + strlen($headers[0][$i][0]);
-        $end     = ($i + 1 < $headerCount) ? $headers[0][$i + 1][1] : strlen($content);
-        $block   = substr($content, $start, $end - $start);
-
-        // 提取粗体字段
-        $fields = [];
-        $fieldNames = ['变更类型', '变更摘要', '影响范围', '操作方', '审批状态', '备份位置', '回退方案'];
-        foreach($fieldNames as $name){
-            if(preg_match('/-\s*\*\*' . preg_quote($name, '/') . '\*\*：(.+)/', $block, $m)){
-                $fields[$name] = trim($m[1]);
-            }else{
-                $fields[$name] = '-';
-            }
-        }
-
-        // 解析变更明细表格
-        $details = [];
-        if(preg_match('/###\s*变更明细(.+)$/s', $block, $tableBlock)){
-            $tableText = $tableBlock[1];
-            // 匹配表格行（跳过表头和分隔行）
-            $lines = preg_split('/\n/', $tableText);
-            foreach($lines as $line){
-                $line = trim($line);
-                if($line === '' || strpos($line, '|') !== 0){
-                    continue;
-                }
-                // 跳过分隔行 |---|---|---|
-                if(preg_match('/^\|[\s\-:|]+\|$/', $line)){
-                    continue;
-                }
-                $cells = array_map('trim', explode('|', trim($line, '|')));
-                if(count($cells) >= 3){
-                    $details[] = [
-                        'file' => $cells[0],
-                        'op'   => $cells[1],
-                        'desc' => $cells[2],
-                    ];
-                }
-            }
-        }
-
-        $entries[] = [
-            'version' => $version,
-            'date'    => $date,
-            'fields'  => $fields,
-            'details' => $details,
-        ];
-    }
-
-    // 按版本号倒序排列（最新在最上）
-    usort($entries, function($a, $b){
-        return version_compare($b['version'], $a['version']);
-    });
-
-    return $entries;
-}
-
-$changelogPath = dirname(__DIR__) . '/docs/版本日志.md';
-$entries = parse_changelog($changelogPath);
-$totalCount = count($entries);
-$latestVersion = $totalCount > 0 ? $entries[0]['version'] : '-';
-$latestDate = $totalCount > 0 ? $entries[0]['date'] : '-';
+// ============================================================
+// 在线更新对接（检查远程更新 + 一键升级）
+// 依据：docs/在线更新对接集成文档.md（gxrz 管理主站）
+// 远程主站：https://vipzp.sryze.cc/
+// 接口：version.json（版本信息）、api/api.php（更新日志，目录重构后位于 api/ 子目录）
+// ============================================================
+define('REMOTE_UPDATE_HOST', 'https://vipzp.sryze.cc/');
 
 /**
- * 根据变更类型返回 Bootstrap 徽章 class
+ * 获取远程更新信息（版本 + 更新日志）
  *
- * @param string $type 变更类型
- * @return string 徽章 class
+ * @return array{ok:bool, version:?array, changelog:?array, error?:string}
  */
-function get_type_badge_class(string $type): string
+function fetch_remote_update_info(): array
 {
-    $typeLower = mb_strtolower($type, 'UTF-8');
-    // L15 修复：中文用 mb_strpos 避免多字节字符匹配错误
-    if(strpos($typeLower, 'bug') !== false || mb_strpos($type, '修复', 0, 'UTF-8') !== false){
-        return 'bg-danger';
+    $result = ['ok' => false, 'version' => null, 'changelog' => null];
+
+    // 1. 获取 version.json（在线升级必需：download_url/signature 均在其中）
+    $ch1 = curl_init(REMOTE_UPDATE_HOST . 'version.json');
+    curl_setup_ssl($ch1);
+    curl_setopt($ch1, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch1, CURLOPT_TIMEOUT, 10);
+    curl_setopt($ch1, CURLOPT_HTTPHEADER, ['Accept: application/json']);
+    $verRaw = curl_exec($ch1);
+    $verHttp = curl_getinfo($ch1, CURLINFO_HTTP_CODE);
+    $verErr = curl_error($ch1);
+    curl_close($ch1);
+
+    if($verRaw !== false && $verHttp === 200) {
+        $verData = json_decode($verRaw, true);
+        if(is_array($verData) && isset($verData['latest_version'])) {
+            $result['version'] = $verData;
+            $result['ok'] = true; // 仅 version.json 可用才视为完整可用（升级依赖它）
+        } else {
+            $result['error'] = '远程版本数据格式错误';
+        }
+    } else {
+        // version.json 不可用（如远程尚未发布更新包）：
+        // 记录原因但继续抓取日志，降级为「仅展示日志」模式
+        $result['error'] = '远程未发布更新包（version.json 不可用，HTTP ' . $verHttp . '）'
+            . ($verErr !== '' ? '（' . $verErr . '）' : '');
     }
-    if(mb_strpos($type, '新增', 0, 'UTF-8') !== false){
-        return 'bg-success';
+
+    // 2. 获取更新日志 api/api.php（无论 version.json 是否可用都抓取）
+    // 依据：在线更新对接集成文档.md § 七「管理主站 API 速查」
+    // 注意：目录重构后日志 API 位于 api/ 子目录，不是根目录 api.php
+    $ch2 = curl_init(REMOTE_UPDATE_HOST . 'api/api.php');
+    curl_setup_ssl($ch2);
+    curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch2, CURLOPT_TIMEOUT, 10);
+    curl_setopt($ch2, CURLOPT_HTTPHEADER, ['Accept: application/json']);
+    $logRaw = curl_exec($ch2);
+    $logHttp = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
+    curl_close($ch2);
+
+    if($logRaw !== false && $logHttp === 200) {
+        $logData = json_decode($logRaw, true);
+        if(is_array($logData) && isset($logData['data'])) {
+            $result['changelog'] = $logData['data'];
+        }
     }
-    if(mb_strpos($type, '优化', 0, 'UTF-8') !== false || mb_strpos($type, '改进', 0, 'UTF-8') !== false){
-        return 'bg-primary';
-    }
-    return 'bg-secondary';
+
+    return $result;
 }
+
+/**
+ * 远程日志条目类型 → Bootstrap 徽章 class
+ * 依据：文档 § 七 changelog 条目类型表
+ *
+ * @param string $type 条目类型
+ * @return array{class:string,label:string}
+ */
+function get_remote_type_badge(string $type): array
+{
+    $map = [
+        'feature'     => ['class' => 'bg-primary', 'label' => '新功能'],
+        'fix'         => ['class' => 'bg-danger', 'label' => '修复'],
+        'improvement' => ['class' => 'bg-success', 'label' => '优化'],
+        'security'    => ['class' => 'bg-warning text-dark', 'label' => '安全'],
+        'breaking'    => ['class' => 'bg-purple', 'label' => '破坏性'],
+        'deprecation' => ['class' => 'bg-secondary', 'label' => '废弃'],
+    ];
+    $key = strtolower(trim($type));
+    return $map[$key] ?? ['class' => 'bg-secondary', 'label' => htmlspecialchars($type, ENT_QUOTES, 'UTF-8')];
+}
+
+/**
+ * 渲染远程更新日志卡片 HTML（PHP 端复用）
+ *
+ * @param mixed $changelog 远程日志数组（api/api.php 的 data 字段）
+ * @return string 卡片 HTML
+ */
+function render_remote_changelog_html($changelog): string
+{
+    if(empty($changelog) || !is_array($changelog)) {
+        return '<div class="ou-empty">远程暂无更新日志</div>';
+    }
+    $html = '';
+    foreach($changelog as $logEntry) {
+        if(!is_array($logEntry)) continue;
+        $logVer  = htmlspecialchars((string)($logEntry['version'] ?? ''), ENT_QUOTES, 'UTF-8');
+        $logDate = htmlspecialchars((string)($logEntry['date'] ?? ''), ENT_QUOTES, 'UTF-8');
+        $items   = is_array($logEntry['items'] ?? null) ? $logEntry['items'] : [];
+        $html .= '<div class="ou-ver-card">'
+               . '<div class="ou-ver-head"><span class="ou-ver-num">v' . $logVer . '</span>'
+               . '<span class="ou-ver-date">' . $logDate . '</span></div>'
+               . '<div class="ou-ver-body"><ul class="ou-changelog-list">';
+        foreach($items as $item) {
+            if(!is_array($item)) continue;
+            $badge = get_remote_type_badge((string)($item['type'] ?? ''));
+            $desc  = htmlspecialchars((string)($item['description'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $html .= '<li><span class="ou-item-badge ' . $badge['class'] . '">' . $badge['label'] . '</span>'
+                   . '<span class="ou-item-desc">' . $desc . '</span></li>';
+        }
+        $html .= '</ul></div></div>';
+    }
+    return $html;
+}
+
+/**
+ * 获取本地版本号（被动识别）
+ * 优先读取 ROOT . 'version.json'，回退到 APP_VERSION 常量
+ *
+ * @return string
+ */
+function get_local_version(): string
+{
+    $versionFile = ROOT . 'version.json';
+    if(file_exists($versionFile)) {
+        $data = json_decode((string)file_get_contents($versionFile), true);
+        if(is_array($data)) {
+            if(isset($data['version'])) return (string)$data['version'];
+            if(isset($data['latest_version'])) return (string)$data['latest_version'];
+        }
+    }
+    return defined('APP_VERSION') ? APP_VERSION : '1.0.0';
+}
+
+/**
+ * 全量备份应用根目录到 backup/bf.zip
+ * 排除目录：backup/、logs/、.git/、temp_update/、node_modules/、.env/
+ * 排除文件：config.php（数据库配置）、*.bak 等备份/临时文件
+ * 目的：备份用于更新失败回滚，但不得包含数据库凭据/Cookie 等敏感数据（backup/ 虽已被 Web 层拦截，仍应纵深防御）
+ *
+ * @return array{ok:bool, path:?string, error?:string}
+ */
+function create_backup_zip(): array
+{
+    $backupDir  = ROOT . 'backup';
+    $backupPath = $backupDir . '/bf.zip';
+
+    if(!is_dir($backupDir)) {
+        @mkdir($backupDir, 0755, true);
+    }
+
+    $zip = new ZipArchive();
+    if($zip->open($backupPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+        return ['ok' => false, 'path' => null, 'error' => '无法创建备份压缩包'];
+    }
+
+    // 排除目录
+    $excludeDir = ['backup', 'logs', '.git', 'temp_update', 'node_modules', '.env', 'docs'];
+    // 排除敏感/临时文件（正则，匹配相对路径）
+    $excludeFile = [
+        '#^config\.php$#i',            // 数据库配置（凭据）
+        '#\.(bak|backup|old|orig|tmp|swp|save|~)$#i', // 备份/临时文件
+        '#\.(log|jsonl)$#i',           // 运行/开发日志
+    ];
+
+    $iter = new RecursiveIteratorIterator(
+        new RecursiveCallbackFilterIterator(
+            new RecursiveDirectoryIterator(ROOT, RecursiveDirectoryIterator::SKIP_DOTS),
+            function($file, $key, $iter) use ($excludeDir, $excludeFile) {
+                $relPath = substr((string)$file->getPathname(), strlen(ROOT));
+                $relPath = ltrim($relPath, '/\\');
+                $topDir  = explode('/', str_replace('\\', '/', $relPath))[0];
+                if(in_array($topDir, $excludeDir, true)) {
+                    return false;
+                }
+                // 目录自身放行（递归遍历需要），文件做精确匹配
+                if($file->isFile()) {
+                    $normPath = str_replace('\\', '/', $relPath);
+                    foreach($excludeFile as $rule) {
+                        if(preg_match($rule, $normPath)) {
+                            return false;
+                        }
+                    }
+                }
+                return true;
+            }
+        ),
+        RecursiveIteratorIterator::LEAVES_ONLY
+    );
+
+    foreach($iter as $file) {
+        if(!$file->isFile()) continue;
+        $relPath = substr((string)$file->getPathname(), strlen(ROOT));
+        // 统一为 ZIP 标准的正斜杠分隔符
+        $relPath = str_replace('\\', '/', $relPath);
+        $relPath = ltrim($relPath, '/');
+        $zip->addFile((string)$file->getPathname(), $relPath);
+    }
+
+    $zip->close();
+    return ['ok' => true, 'path' => $backupPath];
+}
+
+// AJAX 端点：GET ?action=check_update，只读查询无需 CSRF
+if(isset($_GET['action']) && $_GET['action'] === 'check_update') {
+    header('Content-Type: application/json; charset=utf-8');
+    $remote = fetch_remote_update_info();
+    $localVer = get_local_version();
+    $hasUpdate = ($remote['ok'] && isset($remote['version']['latest_version']))
+        ? (version_compare($localVer, $remote['version']['latest_version']) < 0)
+        : false;
+    echo json_encode([
+        'code' => 0,
+        'local_version' => $localVer,
+        'has_update' => $hasUpdate,
+        'remote' => $remote,
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+// AJAX 端点：POST ?action=do_update，执行在线更新（写操作，必须验证 CSRF）
+if(isset($_GET['action']) && $_GET['action'] === 'do_update') {
+    header('Content-Type: application/json; charset=utf-8');
+
+    if($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        echo json_encode(['code' => 405, 'msg' => '仅允许 POST 请求'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // CSRF 校验
+    $csrfHeader = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+    $csrfBody   = $_POST['csrf_token'] ?? '';
+    $token = defined('CSRF_TOKEN') ? CSRF_TOKEN : (function_exists('csrf_token') ? csrf_token() : '');
+    if(empty($token) || (!hash_equals($token, $csrfHeader) && !hash_equals($token, $csrfBody))) {
+        echo json_encode(['code' => 403, 'msg' => 'CSRF 校验失败'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $localVer = get_local_version();
+    $steps = [];
+
+    // Step 1: 检查更新
+    $remote = fetch_remote_update_info();
+    if(!$remote['ok'] || !isset($remote['version']['latest_version'])) {
+        echo json_encode(['code' => 1, 'msg' => $remote['error'] ?? '无法获取远程版本信息'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    $rv = $remote['version'];
+    $remoteVer = $rv['latest_version'];
+    if(version_compare($localVer, $remoteVer) >= 0) {
+        echo json_encode(['code' => 1, 'msg' => '当前已是最新版本，无需更新'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    $steps[] = '检查更新 ✓';
+
+    // 检查 ZipArchive
+    if(!class_exists('ZipArchive')) {
+        echo json_encode(['code' => 1, 'msg' => 'PHP 缺少 ZipArchive 扩展，无法解压更新包'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $downloadUrl = $rv['download_url'] ?? '';
+    $signature   = $rv['signature'] ?? '';
+    if(empty($downloadUrl) || empty($signature)) {
+        echo json_encode(['code' => 1, 'msg' => '远程版本信息缺少下载地址或签名'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // 环境要求检查：PHP 版本必须满足远程声明的最低要求（文档 § 八「服务器环境要求」）
+    $minPhp = $rv['min_php_version'] ?? '';
+    if($minPhp !== '' && version_compare(PHP_VERSION, $minPhp, '<')) {
+        echo json_encode(['code' => 1, 'msg' => 'PHP 版本过低：需 ' . $minPhp . '+，当前 ' . PHP_VERSION], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // Step 2: 下载更新包
+    $tempDir = sys_get_temp_dir() . '/eecms_update_' . date('Ymd_His');
+    if(!is_dir($tempDir)) {
+        @mkdir($tempDir, 0755, true);
+    }
+    $zipPath = $tempDir . '/update_' . $remoteVer . '.zip';
+
+    $ch = curl_init($downloadUrl);
+    curl_setup_ssl($ch);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 300);
+    $zipData = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if($zipData === false || $httpCode !== 200) {
+        echo json_encode(['code' => 1, 'msg' => '下载更新包失败（HTTP ' . $httpCode . '）'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if(file_put_contents($zipPath, $zipData) === false) {
+        echo json_encode(['code' => 1, 'msg' => '无法写入临时文件'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    $steps[] = '下载更新包 ✓';
+
+    // Step 3: 签名校验（SHA-256）
+    $localHash = hash_file('sha256', $zipPath);
+    if($localHash !== $signature) {
+        @unlink($zipPath);
+        @rmdir($tempDir);
+        echo json_encode(['code' => 1, 'msg' => '签名校验失败，更新包可能被篡改'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    $steps[] = '签名校验 ✓';
+
+    // Step 4: 全量备份 → backup/bf.zip（覆盖旧备份）
+    $backupResult = create_backup_zip();
+    if(!$backupResult['ok']) {
+        @unlink($zipPath);
+        @rmdir($tempDir);
+        echo json_encode(['code' => 1, 'msg' => $backupResult['error'] ?? '全量备份失败'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    $steps[] = '全量备份 → backup/bf.zip ✓';
+
+    // Step 5: 解压覆盖（更新包内含完整目录结构 + version.json）
+    $zip = new ZipArchive();
+    if($zip->open($zipPath) !== true) {
+        echo json_encode(['code' => 1, 'msg' => '无法打开 ZIP 文件'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    // 排除目录（对齐文档 § 九「安全机制-文件排除」+ gxrz Updater.class.php）：
+    // client/（更新器自身）、temp_update/（临时）、backup/（备份）、config/（数据库配置等敏感文件）、.git/
+    $excludeDirs = ['backup/', '.git/', 'config/', 'temp_update/', 'client/'];
+    for($i = 0; $i < $zip->numFiles; $i++) {
+        $entryName = $zip->getNameIndex($i);
+        $skip = false;
+        foreach($excludeDirs as $ex) {
+            if(strpos($entryName, $ex) === 0) {
+                $skip = true;
+                break;
+            }
+        }
+        if($skip) continue;
+
+        $targetPath = ROOT . $entryName;
+        // 防路径遍历
+        if(strpos(realpath(dirname($targetPath)) ?: '', realpath(ROOT) ?: '') !== 0) continue;
+
+        if(substr($entryName, -1) === '/') {
+            if(!is_dir($targetPath)) @mkdir($targetPath, 0755, true);
+        } else {
+            $dir = dirname($targetPath);
+            if(!is_dir($dir)) @mkdir($dir, 0755, true);
+            file_put_contents($targetPath, $zip->getFromIndex($i));
+        }
+    }
+    $zip->close();
+    $steps[] = '解压覆盖 ✓';
+
+    // Step 6: 执行迁移脚本（如有）
+    $migrationScript = $rv['migration_script'] ?? null;
+    if(!empty($migrationScript)) {
+        $migrateFile = ROOT . $migrationScript;
+        if(file_exists($migrateFile)) {
+            @include($migrateFile);
+            @unlink($migrateFile);
+        }
+        $steps[] = '执行迁移 ✓';
+    }
+
+    // Step 7: 被动识别版本号（读取覆盖后的 version.json，禁止主动写入）
+    $detectedVersion = get_local_version();
+    $steps[] = '版本号识别 → ' . $detectedVersion . ' ✓';
+
+    // 清理临时文件
+    @unlink($zipPath);
+    @rmdir($tempDir);
+
+    echo json_encode([
+        'code' => 0,
+        'msg'  => '更新成功，当前版本 ' . $detectedVersion,
+        'data' => [
+            'success'         => true,
+            'steps'           => $steps,
+            'current_version' => $detectedVersion,
+        ],
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+// 服务端预取远程信息（页面首次加载时展示）
+$remoteUpdate = fetch_remote_update_info();
+$localVersion = get_local_version();
+$hasRemoteUpdate = ($remoteUpdate['ok'] && isset($remoteUpdate['version']['latest_version']))
+    ? (version_compare($localVersion, $remoteUpdate['version']['latest_version']) < 0)
+    : false;
 ?>
 <!DOCTYPE html>
 <html lang="zh">
@@ -135,30 +422,45 @@ function get_type_badge_class(string $type): string
 <link rel="stylesheet" href="style/css/bootstrap.min.css">
 <link rel="stylesheet" href="style/css/materialdesignicons.min.css">
 <link rel="stylesheet" href="style/css/admin.css">
+<link rel="stylesheet" href="style/css/sweetalert2.min.css">
 <style>
 html,body{height:100%;margin:0}body{overflow:auto}.admin-content{padding:16px 20px!important}
-.changelog-summary{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px}
-.summary-card{flex:1;min-width:140px;padding:14px 18px;border-radius:var(--admin-radius);background:var(--admin-card-bg);box-shadow:var(--admin-shadow);border:1px solid var(--admin-border)}
-.summary-card .label{font-size:0.8rem;color:var(--admin-text-muted);margin-bottom:4px}
-.summary-card .value{font-size:1.3rem;font-weight:700;color:var(--admin-text)}
-.version-card{margin-bottom:16px;border:1px solid var(--admin-border);border-radius:var(--admin-radius);overflow:hidden;background:var(--admin-card-bg);box-shadow:var(--admin-shadow)}
-.version-card .card-header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 18px;background:rgba(59,130,246,0.04);border-bottom:1px solid var(--admin-border)}
-.version-card .ver-num{font-size:1.25rem;font-weight:700;color:var(--admin-text);font-family:"JetBrains Mono",monospace}
-.version-card .ver-date{font-size:0.86rem;color:var(--admin-text-muted)}
-.version-card .ver-badge{font-size:0.78rem;font-weight:600;padding:4px 10px;border-radius:999px}
-.version-card .card-body{padding:16px 18px}
-.version-card .field-row{display:flex;gap:8px;margin-bottom:8px;font-size:0.9rem}
-.version-card .field-label{color:var(--admin-text-muted);flex-shrink:0;min-width:80px}
-.version-card .field-value{color:var(--admin-text);word-break:break-word}
-.version-card .field-value code{background:rgba(59,130,246,0.08);padding:1px 6px;border-radius:4px;font-size:0.84rem;color:var(--admin-primary)}
-.version-card .details-title{font-size:0.86rem;font-weight:600;color:var(--admin-text-muted);margin:14px 0 8px}
-.version-card .rollback{margin-top:12px;padding:10px 14px;background:rgba(255,193,87,0.08);border:1px solid rgba(255,193,87,0.2);border-radius:var(--admin-radius-sm)}
-.version-card .rollback summary{cursor:pointer;font-size:0.84rem;font-weight:600;color:#d9a441;outline:none;user-select:none}
-.version-card .rollback summary i{margin-right:4px}
-.version-card .rollback-body{margin-top:8px;font-size:0.84rem;color:var(--admin-text);line-height:1.6}
-.empty-state{text-align:center;padding:80px 20px;color:var(--admin-text-muted)}
-.empty-state i{font-size:64px;display:block;margin-bottom:16px;opacity:0.4}
-.empty-state h4{color:var(--admin-text-muted);margin-bottom:8px}
+/* 在线更新检查区块 */
+.online-update-section{margin-bottom:24px;border:1px solid var(--admin-border);border-radius:var(--admin-radius);overflow:hidden;background:var(--admin-card-bg);box-shadow:var(--admin-shadow)}
+.online-update-section .ou-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:linear-gradient(135deg,rgba(59,130,246,0.08),rgba(99,102,241,0.06));border-bottom:1px solid var(--admin-border)}
+.online-update-section .ou-title{display:flex;align-items:center;gap:8px;font-size:1.05rem;font-weight:700;color:var(--admin-text)}
+.online-update-section .ou-title i{font-size:22px;color:var(--admin-primary)}
+.online-update-section .ou-refresh{padding:5px 14px;font-size:0.82rem;border-radius:var(--admin-radius-sm);border:1px solid var(--admin-border);background:var(--admin-card-bg);color:var(--admin-text-muted);cursor:pointer;transition:all .2s}
+.online-update-section .ou-refresh:hover{border-color:var(--admin-primary);color:var(--admin-primary)}
+.online-update-section .ou-refresh:disabled{opacity:.6;cursor:not-allowed}
+.online-update-section .ou-body{padding:16px 18px}
+.ou-status-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+.ou-status-item{display:flex;flex-direction:column;gap:2px}
+.ou-status-item .label{font-size:0.76rem;color:var(--admin-text-muted)}
+.ou-status-item .value{font-size:1rem;font-weight:600;color:var(--admin-text);font-family:"SF Mono",Consolas,Monaco,Menlo,"Courier New",monospace}
+.ou-status-badge{margin-left:auto;padding:6px 14px;border-radius:999px;font-size:0.82rem;font-weight:600}
+.ou-badge-update{background:rgba(245,158,11,0.12);color:#d9a441;border:1px solid rgba(245,158,11,0.3)}
+.ou-badge-latest{background:rgba(34,197,94,0.12);color:#22c55e;border:1px solid rgba(34,197,94,0.3)}
+.ou-badge-error{background:rgba(239,68,68,0.12);color:#ef4444;border:1px solid rgba(239,68,68,0.3)}
+.ou-btn-update{margin-left:8px;padding:6px 18px;font-size:0.84rem;font-weight:600;border-radius:var(--admin-radius-sm);border:none;background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;gap:6px}
+.ou-btn-update:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(59,130,246,0.35)}
+.ou-btn-update:disabled{opacity:.6;cursor:not-allowed;transform:none}
+.bg-purple{background:#8b5cf6!important;color:#fff!important}
+.ou-changelog-list{list-style:none;padding:0;margin:0}
+.ou-changelog-list li{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px dashed var(--admin-border);font-size:0.88rem}
+.ou-changelog-list li:last-child{border-bottom:none}
+.ou-ver-card{margin-bottom:14px;border:1px solid var(--admin-border);border-radius:var(--admin-radius-sm);overflow:hidden;background:var(--admin-card-bg)}
+.ou-ver-card .ou-ver-head{display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(59,130,246,0.04);border-bottom:1px solid var(--admin-border)}
+.ou-ver-card .ou-ver-num{font-size:0.95rem;font-weight:700;color:var(--admin-text);font-family:"SF Mono",Consolas,Monaco,Menlo,"Courier New",monospace}
+.ou-ver-card .ou-ver-date{font-size:0.8rem;color:var(--admin-text-muted)}
+.ou-ver-card .ou-ver-body{padding:10px 14px}
+.ou-changelog-list .ou-item-badge{flex-shrink:0;font-size:0.72rem;font-weight:600;padding:3px 8px;border-radius:6px;color:#fff;white-space:nowrap}
+.ou-changelog-list .ou-item-desc{color:var(--admin-text);line-height:1.5}
+.ou-info-line{font-size:0.82rem;color:var(--admin-text-muted);margin-top:10px;padding-top:10px;border-top:1px solid var(--admin-border)}
+.ou-info-line code{background:rgba(59,130,246,0.08);padding:1px 6px;border-radius:4px;color:var(--admin-primary);font-size:0.8rem}
+.ou-version-compare{display:flex;align-items:center;gap:8px;font-size:0.86rem;color:var(--admin-text-muted)}
+.ou-version-compare .arrow{color:var(--admin-primary);font-weight:700}
+.ou-empty{text-align:center;padding:20px;color:var(--admin-text-muted);font-size:0.88rem}
 </style>
 </head>
 <body>
@@ -168,102 +470,299 @@ html,body{height:100%;margin:0}body{overflow:auto}.admin-content{padding:16px 20
     <i class="mdi mdi-history"></i> 更新日志
   </div>
 
-<?php if($totalCount === 0): ?>
-  <div class="empty-state">
-    <i class="mdi mdi-file-document-outline"></i>
-    <h4>暂无更新日志</h4>
-    <p>版本日志文件不存在或尚未记录任何版本变更</p>
-  </div>
-<?php else: ?>
-  <!-- 顶部统计 -->
-  <div class="changelog-summary">
-    <div class="summary-card">
-      <div class="label">总版本数</div>
-      <div class="value"><?php echo $totalCount; ?></div>
+  <!-- 在线更新检查区块 -->
+  <div class="online-update-section" id="onlineUpdateSection">
+    <div class="ou-header">
+      <div class="ou-title">
+        <i class="mdi mdi-cloud-download"></i> 在线更新检查
+      </div>
+      <button class="ou-refresh" id="btnRefreshUpdate" onclick="refreshRemoteUpdate()">
+        <i class="mdi mdi-refresh"></i> 重新检查
+      </button>
     </div>
-    <div class="summary-card">
-      <div class="label">最新版本</div>
-      <div class="value"><?php echo htmlspecialchars($latestVersion, ENT_QUOTES, 'UTF-8'); ?></div>
-    </div>
-    <div class="summary-card">
-      <div class="label">最新更新</div>
-      <div class="value"><?php echo htmlspecialchars($latestDate, ENT_QUOTES, 'UTF-8'); ?></div>
-    </div>
-  </div>
+    <div class="ou-body" id="ouBody">
+      <?php if(!$remoteUpdate['ok']): ?>
+        <div class="ou-status-row">
+          <div class="ou-status-item">
+            <span class="label">本地版本</span>
+            <span class="value">v<?php echo htmlspecialchars($localVersion, ENT_QUOTES, 'UTF-8'); ?></span>
+          </div>
+          <span class="ou-status-badge ou-badge-error">
+            <i class="mdi mdi-alert-circle-outline"></i> 远程未发布更新包
+          </span>
+        </div>
+        <?php if(!empty($remoteUpdate['changelog']) && is_array($remoteUpdate['changelog'])): ?>
+          <div class="ou-info-line">
+            <i class="mdi mdi-information-outline"></i>
+            <?php echo htmlspecialchars($remoteUpdate['error'] ?? '无法连接更新服务器', ENT_QUOTES, 'UTF-8'); ?>
+            ，以下为远程更新日志；待管理主站发布更新包后可在线升级。
+          </div>
+          <?php echo render_remote_changelog_html($remoteUpdate['changelog']); ?>
+        <?php else: ?>
+          <div class="ou-empty"><?php echo htmlspecialchars($remoteUpdate['error'] ?? '无法连接更新服务器', ENT_QUOTES, 'UTF-8'); ?></div>
+        <?php endif; ?>
+      <?php else:
+        $rv = $remoteUpdate['version'];
+        $remoteVer = $rv['latest_version'] ?? '-';
+        $releaseDate = $rv['release_date'] ?? '-';
+        $pkgType = $rv['package_type'] ?? 'update';
+        $minPhp = $rv['min_php_version'] ?? '-';
+      ?>
+        <div class="ou-status-row">
+          <div class="ou-status-item">
+            <span class="label">本地版本</span>
+            <span class="value">v<?php echo htmlspecialchars($localVersion, ENT_QUOTES, 'UTF-8'); ?></span>
+          </div>
+          <div class="ou-version-compare"><i class="mdi mdi-arrow-right"></i></div>
+          <div class="ou-status-item">
+            <span class="label">远程最新</span>
+            <span class="value">v<?php echo htmlspecialchars($remoteVer, ENT_QUOTES, 'UTF-8'); ?></span>
+          </div>
+          <div class="ou-status-item">
+            <span class="label">发布日期</span>
+            <span class="value" style="font-family:inherit"><?php echo htmlspecialchars($releaseDate, ENT_QUOTES, 'UTF-8'); ?></span>
+          </div>
+          <?php if($hasRemoteUpdate): ?>
+            <span class="ou-status-badge ou-badge-update">
+              <i class="mdi mdi-arrow-up-bold-circle-outline"></i> 发现新版本
+            </span>
+            <button class="ou-btn-update" id="btnDoUpdate" onclick="doUpdate()">
+              <i class="mdi mdi-cloud-upload-outline"></i> 在线升级
+            </button>
+          <?php else: ?>
+            <span class="ou-status-badge ou-badge-latest">
+              <i class="mdi mdi-check-circle-outline"></i> 已是最新版本
+            </span>
+          <?php endif; ?>
+        </div>
 
-  <!-- 版本卡片列表 -->
-  <?php foreach($entries as $entry):
-      $version = htmlspecialchars($entry['version'], ENT_QUOTES, 'UTF-8');
-      $date    = htmlspecialchars($entry['date'], ENT_QUOTES, 'UTF-8');
-      $fields  = $entry['fields'];
-      $type    = $fields['变更类型'];
-      $badgeClass = get_type_badge_class($type);
-      $typeBadge = '<span class="ver-badge ' . $badgeClass . '">' . htmlspecialchars($type, ENT_QUOTES, 'UTF-8') . '</span>';
-  ?>
-  <div class="version-card">
-    <div class="card-header">
-      <span class="ver-num">v<?php echo $version; ?></span>
-      <span class="ver-date"><i class="mdi mdi-calendar-outline"></i> <?php echo $date; ?></span>
-      <?php echo $typeBadge; ?>
-      <?php if($fields['审批状态'] !== '-'): ?>
-        <span class="ver-badge bg-<?php echo $fields['审批状态'] === '已同意' ? 'success' : 'warning'; ?>"><?php echo htmlspecialchars($fields['审批状态'], ENT_QUOTES, 'UTF-8'); ?></span>
-      <?php endif; ?>
-    </div>
-    <div class="card-body">
-      <div class="field-row">
-        <span class="field-label"><i class="mdi mdi-text"></i> 变更摘要</span>
-        <span class="field-value"><?php echo htmlspecialchars($fields['变更摘要'], ENT_QUOTES, 'UTF-8'); ?></span>
-      </div>
-      <div class="field-row">
-        <span class="field-label"><i class="mdi mdi-folder-outline"></i> 影响范围</span>
-        <span class="field-value"><code><?php echo htmlspecialchars($fields['影响范围'], ENT_QUOTES, 'UTF-8'); ?></code></span>
-      </div>
-      <div class="field-row">
-        <span class="field-label"><i class="mdi mdi-account"></i> 操作方</span>
-        <span class="field-value"><?php echo htmlspecialchars($fields['操作方'], ENT_QUOTES, 'UTF-8'); ?></span>
-      </div>
-      <?php if($fields['备份位置'] !== '-'): ?>
-      <div class="field-row">
-        <span class="field-label"><i class="mdi mdi-folder-zip-outline"></i> 备份位置</span>
-        <span class="field-value"><code><?php echo htmlspecialchars($fields['备份位置'], ENT_QUOTES, 'UTF-8'); ?></code></span>
-      </div>
-      <?php endif; ?>
-
-      <?php if(!empty($entry['details'])): ?>
-      <div class="details-title"><i class="mdi mdi-format-list-bulleted"></i> 变更明细</div>
-      <div class="table-responsive">
-        <table class="table table-sm table-bordered align-middle mb-0">
-          <thead class="table-light">
-            <tr>
-              <th style="width:30%">文件</th>
-              <th style="width:15%">操作</th>
-              <th>说明</th>
-            </tr>
-          </thead>
-          <tbody>
-            <?php foreach($entry['details'] as $detail): ?>
-            <tr>
-              <td><code><?php echo htmlspecialchars($detail['file'], ENT_QUOTES, 'UTF-8'); ?></code></td>
-              <td><?php echo htmlspecialchars($detail['op'], ENT_QUOTES, 'UTF-8'); ?></td>
-              <td><?php echo htmlspecialchars($detail['desc'], ENT_QUOTES, 'UTF-8'); ?></td>
-            </tr>
-            <?php endforeach; ?>
-          </tbody>
-        </table>
-      </div>
-      <?php endif; ?>
-
-      <?php if($fields['回退方案'] !== '-'): ?>
-      <details class="rollback">
-        <summary><i class="mdi mdi-arrow-undo-circle-outline"></i> 回退方案</summary>
-        <div class="rollback-body"><?php echo htmlspecialchars($fields['回退方案'], ENT_QUOTES, 'UTF-8'); ?></div>
-      </details>
+        <?php echo render_remote_changelog_html($remoteUpdate['changelog'] ?? null); ?>
       <?php endif; ?>
     </div>
   </div>
-  <?php endforeach; ?>
-<?php endif; ?>
 
 </div>
+
+<script>
+// 重新检查更新（AJAX，GET 只读查询无需 CSRF）
+function refreshRemoteUpdate() {
+    var btn = document.getElementById('btnRefreshUpdate');
+    var body = document.getElementById('ouBody');
+    if(!btn || !body) return;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="mdi mdi-loading mdi-spin"></i> 检查中...';
+    fetch('changelog.php?action=check_update', {credentials: 'same-origin'})
+      .then(function(r){ return r.json(); })
+      .then(function(res){
+          renderRemoteUpdate(res);
+          btn.disabled = false;
+          btn.innerHTML = '<i class="mdi mdi-refresh"></i> 重新检查';
+      })
+      .catch(function(err){
+          body.innerHTML = '<div class="ou-status-row"><div class="ou-status-item"><span class="label">本地版本</span><span class="value">v' + escapeHtml('<?php echo htmlspecialchars($localVersion, ENT_QUOTES, 'UTF-8'); ?>') + '</span></div><span class="ou-status-badge ou-badge-error"><i class="mdi mdi-alert-circle-outline"></i> 网络错误</span></div><div class="ou-empty">请求失败：' + escapeHtml(String(err)) + '</div>';
+          btn.disabled = false;
+          btn.innerHTML = '<i class="mdi mdi-refresh"></i> 重新检查';
+      });
+}
+
+function renderRemoteUpdate(res) {
+    var body = document.getElementById('ouBody');
+    if(!body) return;
+    var local = res.local_version || '?';
+    var remote = res.remote || {};
+    if(!remote.ok) {
+        // 远程未发布更新包（version.json 不可用）：若日志可取则降级展示，否则显示错误
+        var cl = remote.changelog;
+        if(cl && Array.isArray(cl) && cl.length > 0) {
+            body.innerHTML =
+                '<div class="ou-status-row">' +
+                  '<div class="ou-status-item"><span class="label">本地版本</span><span class="value">v' + escapeHtml(local) + '</span></div>' +
+                  '<span class="ou-status-badge ou-badge-error"><i class="mdi mdi-alert-circle-outline"></i> 远程未发布更新包</span>' +
+                '</div>' +
+                '<div class="ou-info-line"><i class="mdi mdi-information-outline"></i> ' + escapeHtml(remote.error || '无法连接更新服务器') + '，以下为远程更新日志；待管理主站发布更新包后可在线升级。</div>' +
+                renderChangelogHtml(cl);
+        } else {
+            body.innerHTML = '<div class="ou-status-row"><div class="ou-status-item"><span class="label">本地版本</span><span class="value">v' + escapeHtml(local) + '</span></div><span class="ou-status-badge ou-badge-error"><i class="mdi mdi-alert-circle-outline"></i> 远程连接失败</span></div><div class="ou-empty">' + escapeHtml(remote.error || '无法连接更新服务器') + '</div>';
+        }
+        return;
+    }
+    var v = remote.version || {};
+    var remoteVer = v.latest_version || '-';
+    var releaseDate = v.release_date || '-';
+    var hasUpdate = res.has_update;
+    var badgeHtml = hasUpdate
+        ? '<span class="ou-status-badge ou-badge-update"><i class="mdi mdi-arrow-up-bold-circle-outline"></i> 发现新版本</span><button class="ou-btn-update" id="btnDoUpdate" onclick="doUpdate()"><i class="mdi mdi-cloud-upload-outline"></i> 在线升级</button>'
+        : '<span class="ou-status-badge ou-badge-latest"><i class="mdi mdi-check-circle-outline"></i> 已是最新版本</span>';
+    body.innerHTML =
+        '<div class="ou-status-row">' +
+          '<div class="ou-status-item"><span class="label">本地版本</span><span class="value">v' + escapeHtml(local) + '</span></div>' +
+          '<div class="ou-version-compare"><i class="mdi mdi-arrow-right"></i></div>' +
+          '<div class="ou-status-item"><span class="label">远程最新</span><span class="value">v' + escapeHtml(remoteVer) + '</span></div>' +
+          '<div class="ou-status-item"><span class="label">发布日期</span><span class="value" style="font-family:inherit">' + escapeHtml(releaseDate) + '</span></div>' +
+          badgeHtml +
+        '</div>' +
+        renderChangelogHtml(remote.changelog);
+}
+
+// 渲染远程更新日志卡片 HTML（JS 端复用）
+function renderChangelogHtml(cl) {
+    var changelogHtml = '';
+    if(cl && Array.isArray(cl) && cl.length > 0) {
+        cl.forEach(function(entry){
+            var ev = escapeHtml(entry.version || '');
+            var ed = escapeHtml(entry.date || '');
+            changelogHtml += '<div class="ou-ver-card"><div class="ou-ver-head"><span class="ou-ver-num">v' + ev + '</span><span class="ou-ver-date">' + ed + '</span></div><div class="ou-ver-body"><ul class="ou-changelog-list">';
+            var items = entry.items || [];
+            items.forEach(function(item){
+                var badge = getRemoteTypeBadge(item.type || '');
+                changelogHtml += '<li><span class="ou-item-badge ' + badge[0] + '">' + badge[1] + '</span><span class="ou-item-desc">' + escapeHtml(item.description || '') + '</span></li>';
+            });
+            changelogHtml += '</ul></div></div>';
+        });
+    } else {
+        changelogHtml = '<div class="ou-empty">远程暂无更新日志</div>';
+    }
+    return changelogHtml;
+}
+
+function getRemoteTypeBadge(type) {
+    var map = {
+        'feature': ['bg-primary', '新功能'],
+        'fix': ['bg-danger', '修复'],
+        'improvement': ['bg-success', '优化'],
+        'security': ['bg-warning text-dark', '安全'],
+        'breaking': ['bg-purple', '破坏性'],
+        'deprecation': ['bg-secondary', '废弃']
+    };
+    var key = (type || '').toLowerCase().trim();
+    return map[key] || ['bg-secondary', escapeHtml(type)];
+}
+
+function escapeHtml(str) {
+    if(str === null || str === undefined) return '';
+    return String(str).replace(/[&<>"']/g, function(c){
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+}
+</script>
+<script src="style/js/sweetalert2.min.js"></script>
+<meta name="csrf-token" content="<?php echo function_exists('csrf_token') ? csrf_token() : ''; ?>">
+<script>
+// 在线升级（POST + CSRF，危险操作需二次确认）
+function doUpdate() {
+    var csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    var btn = document.getElementById('btnDoUpdate');
+
+    if(typeof Swal === 'undefined') {
+        alert2('SweetAlert2 未加载，无法显示确认弹窗');
+        return;
+    }
+
+    Swal.fire({
+        title: '确认在线升级？',
+        html: '<div style="text-align:left;line-height:1.8">系统将自动执行以下步骤：<br>'
+            + '1. 下载远程更新包<br>'
+            + '2. SHA-256 签名校验<br>'
+            + '3. 全量备份当前文件 → backup/bf.zip<br>'
+            + '4. 解压覆盖<br>'
+            + '5. 被动识别新版本号<br><br>'
+            + '<span style="color:#ef4444;font-size:0.84rem">更新期间请勿关闭页面，更新完成后页面将自动刷新</span>'
+            + '</div>',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: '确认升级',
+        cancelButtonText: '取消',
+        confirmButtonColor: '#3b82f6',
+        cancelButtonColor: '#94a3b8',
+        reverseButtons: true
+    }).then(function(result) {
+        if(!result.isConfirmed) return;
+
+        // 禁用按钮，显示进度
+        if(btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="mdi mdi-loading mdi-spin"></i> 升级中...';
+        }
+
+        Swal.fire({
+            title: '正在升级',
+            html: '<div id="updateProgress" style="text-align:left;line-height:2;font-size:0.88rem">'
+                + '<i class="mdi mdi-loading mdi-spin"></i> 下载更新包中...<br>'
+                + '<span style="color:var(--admin-text-muted)">请耐心等待，勿关闭页面</span>'
+                + '</div>',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            showConfirmButton: false
+        });
+
+        var formData = new FormData();
+        formData.append('csrf_token', csrfToken);
+
+        fetch('changelog.php?action=do_update', {
+            method: 'POST',
+            body: formData,
+            credentials: 'same-origin',
+            headers: { 'X-CSRF-Token': csrfToken }
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+            if(res.code === 0 && res.data && res.data.success) {
+                var stepsHtml = res.data.steps.map(function(s) {
+                    return '<div style="color:#22c55e"><i class="mdi mdi-check-circle"></i> ' + escapeHtml(s) + '</div>';
+                }).join('');
+                Swal.fire({
+                    title: '升级成功',
+                    html: '<div style="text-align:left;line-height:2;font-size:0.88rem">' + stepsHtml + '</div>',
+                    icon: 'success',
+                    confirmButtonText: '确定',
+                    confirmButtonColor: '#3b82f6',
+                    timer: 3000,
+                    timerProgressBar: true
+                }).then(function() {
+                    // 局部刷新更新区块
+                    refreshRemoteUpdate();
+                    if(btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="mdi mdi-cloud-upload-outline"></i> 在线升级';
+                    }
+                });
+            } else {
+                Swal.fire({
+                    title: '升级失败',
+                    text: res.msg || '未知错误',
+                    icon: 'error',
+                    confirmButtonText: '确定',
+                    confirmButtonColor: '#3b82f6'
+                });
+                if(btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="mdi mdi-cloud-upload-outline"></i> 在线升级';
+                }
+            }
+        })
+        .catch(function(err) {
+            Swal.fire({
+                title: '网络错误',
+                text: String(err),
+                icon: 'error',
+                confirmButtonText: '确定',
+                confirmButtonColor: '#3b82f6'
+            });
+            if(btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="mdi mdi-cloud-upload-outline"></i> 在线升级';
+            }
+        });
+    });
+}
+
+function alert2(msg) {
+    var d = document.createElement('div');
+    d.style.cssText = 'position:fixed;top:20px;right:20px;padding:12px 20px;background:#ef4444;color:#fff;border-radius:8px;z-index:99999;font-size:0.88rem';
+    d.textContent = msg;
+    document.body.appendChild(d);
+    setTimeout(function(){ d.remove(); }, 3000);
+}
+</script>
 </body>
 </html>

@@ -21,6 +21,9 @@ $blocked = [
     '#^/config\.php$#i',                          // 数据库配置
     '#\.(bak|backup|old|orig|tmp|swp|save|~)$#i', // 备份/临时文件
     '#^/inc/#i',                                  // 核心类库目录
+    '#^/docs/#i',                                 // 开发文档（版本日志/规范含备份路径等敏感信息，严禁暴露公网）
+    '#^/logs/#i',                                 // 开发日志/调试文件
+    '#^/backup/#i',                               // 全量备份 bf.zip（含数据库配置等敏感数据，严禁暴露公网）
     '#^/api/v1/data/#i',                          // v1 API 令牌库（store.json 含敏感 Token）
 ];
 foreach ($blocked as $rule) {

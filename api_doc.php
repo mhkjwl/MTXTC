@@ -177,14 +177,11 @@ if($docUserId > 0) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>API 对接文档 - <?php echo htmlspecialchars($siteName);?></title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link href="admin/style/css/materialdesignicons.min.css" rel="stylesheet">
   <link href="bd/qd.css" rel="stylesheet">
   <style>
     [data-theme="dark"]{--bg:#0d0b16;--panel:rgba(30,26,46,0.72);--panel-strong:rgba(30,26,46,0.92);--line:rgba(123,140,255,0.16);--text:#f0edf8;--muted:#8a85a0;--shadow:0 20px 60px rgba(0,0,0,0.3);}
-    body{margin:0;background:var(--bg-base);font-family:'Inter','Noto Sans SC',sans-serif;color:var(--text);}
+    body{margin:0;background:var(--bg-base);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei","Helvetica Neue",Arial,sans-serif;color:var(--text);}
     .doc-shell{max-width:960px;margin:0 auto;padding:32px 24px 64px;}
     .doc-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:32px;flex-wrap:wrap;gap:12px;}
     .doc-header h1{font-size:1.6rem;font-weight:800;margin:0;}
@@ -197,19 +194,19 @@ if($docUserId > 0) {
     .doc-card p{font-size:0.88rem;line-height:1.7;color:var(--text-2);margin:8px 0;}
     .doc-card ul{margin:8px 0;padding-left:20px;}
     .doc-card li{font-size:0.86rem;line-height:1.8;color:var(--text-2);}
-    .doc-card code{font-family:'JetBrains Mono',monospace;font-size:0.82rem;background:rgba(123,140,255,0.1);padding:2px 8px;border-radius:5px;color:var(--primary);}
+    .doc-card code{font-family:"SF Mono",Consolas,Monaco,Menlo,"Courier New",monospace;font-size:0.82rem;background:rgba(123,140,255,0.1);padding:2px 8px;border-radius:5px;color:var(--primary);}
     .code-block{background:#1a1825;border-radius:10px;padding:18px 20px;margin:12px 0;overflow-x:auto;position:relative;}
-    .code-block pre{margin:0;font-family:'JetBrains Mono',monospace;font-size:0.8rem;line-height:1.65;color:#e0dce8;white-space:pre;}
+    .code-block pre{margin:0;font-family:"SF Mono",Consolas,Monaco,Menlo,"Courier New",monospace;font-size:0.8rem;line-height:1.65;color:#e0dce8;white-space:pre;}
     .code-block .copy-code{position:absolute;top:10px;right:10px;background:rgba(255,255,255,0.1);border:none;color:#aaa;padding:4px 10px;border-radius:6px;font-size:0.72rem;cursor:pointer;transition:all .2s;}
     .code-block .copy-code:hover{background:rgba(255,255,255,0.2);color:#fff;}
     .code-block .lang-label{position:absolute;top:10px;left:14px;font-size:0.68rem;color:#6a6580;text-transform:uppercase;letter-spacing:1px;font-weight:600;}
     .code-block pre{padding-top:22px;}
-    .method-badge{display:inline-block;padding:3px 10px;border-radius:6px;font-size:0.72rem;font-weight:700;font-family:'JetBrains Mono',monospace;margin-right:8px;}
+    .method-badge{display:inline-block;padding:3px 10px;border-radius:6px;font-size:0.72rem;font-weight:700;font-family:"SF Mono",Consolas,Monaco,Menlo,"Courier New",monospace;margin-right:8px;}
     .method-post{background:rgba(34,197,94,0.15);color:#22c55e;border:1px solid rgba(34,197,94,0.3);}
     .param-table{width:100%;border-collapse:collapse;margin:12px 0;font-size:0.84rem;}
     .param-table th{text-align:left;padding:10px 12px;background:rgba(123,140,255,0.08);border-bottom:2px solid var(--border-2);font-weight:600;color:var(--text);}
     .param-table td{padding:10px 12px;border-bottom:1px solid var(--border-2);color:var(--text-2);}
-    .param-table td:first-child{font-family:'JetBrains Mono',monospace;font-size:0.8rem;color:var(--primary);}
+    .param-table td:first-child{font-family:"SF Mono",Consolas,Monaco,Menlo,"Courier New",monospace;font-size:0.8rem;color:var(--primary);}
     .param-table .req{color:#ef4444;font-weight:600;font-size:0.72rem;}
     .param-table .opt{color:var(--muted);font-size:0.72rem;}
     .error-table th{background:rgba(239,68,68,0.06);}

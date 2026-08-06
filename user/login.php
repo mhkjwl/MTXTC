@@ -31,9 +31,6 @@ $csrfToken   = csrf_token();
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>用户登录 - <?php echo htmlspecialchars($siteName);?></title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
 <link href="../admin/style/css/materialdesignicons.min.css" rel="stylesheet">
 <style>
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
@@ -53,8 +50,8 @@ html{-webkit-font-smoothing:antialiased}
   --shadow-lg:0 16px 48px rgba(123,140,255,0.12);
   --shadow-xl:0 24px 64px rgba(123,140,255,0.16);
   --radius-sm:12px;--radius-md:16px;--radius-lg:20px;--radius-xl:26px;--radius-full:999px;
-  --font-display:'Inter','Noto Sans SC',sans-serif;
-  --font-body:'Noto Sans SC','Inter',sans-serif;
+  --font-display:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei","Helvetica Neue",Arial,sans-serif;
+  --font-body:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei","Helvetica Neue",Arial,sans-serif;
   --ease-out:cubic-bezier(0.16,1,0.3,1);
   --ease-spring:cubic-bezier(0.34,1.56,0.64,1);
 }

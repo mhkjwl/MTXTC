@@ -27,7 +27,7 @@ html {
 
 body {
   margin: 0;
-  font-family: "Inter", "Segoe UI", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
   color: var(--text);
   background:
     radial-gradient(circle at top left, rgba(155, 125, 255, 0.18), transparent 28%),
@@ -212,6 +212,7 @@ body::after {
 
 .contact-card {
   padding: 14px 18px;
+  overflow: hidden;
 }
 .contact-email {
   display: flex;
@@ -219,9 +220,15 @@ body::after {
   gap: 8px;
   color: var(--muted);
   font-size: 0.85rem;
-  word-break: break-all;
   cursor: pointer;
   transition: color 0.2s;
+}
+.contact-email span {
+  flex: 1;
+  min-width: 0;
+  word-break: break-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .contact-email:hover {
   color: #7b8cff;
