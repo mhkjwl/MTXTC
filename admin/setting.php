@@ -78,15 +78,15 @@ if(isset($_POST['action'])) {
         <div class="card-body">
           <form id="mainForm" method="post">
             <div class="row g-3">
-              <div class="col-md-6"><label class="form-label">网站名称</label><input value="<?php echo htmlspecialchars($conf['name'], ENT_QUOTES);?>" type="text" class="form-control" name="name"></div>
-              <div class="col-md-6"><label class="form-label">网站标题</label><input value="<?php echo htmlspecialchars($conf['title'], ENT_QUOTES);?>" type="text" class="form-control" name="title"></div>
-              <div class="col-md-6"><label class="form-label">联系邮箱</label><input value="<?php echo htmlspecialchars($conf['email'], ENT_QUOTES);?>" type="text" class="form-control" name="email" placeholder="选填，显示在前端快速指南卡片里"></div>
-              <div class="col-md-6"><label class="form-label">ICP备案号</label><input value="<?php echo htmlspecialchars($conf['icp'], ENT_QUOTES);?>" type="text" class="form-control" name="icp"></div>
-              <div class="col-md-6"><label class="form-label">警告</label><input value="<?php echo htmlspecialchars($conf['Copyright'], ENT_QUOTES);?>" type="text" class="form-control" name="Copyright" placeholder="以固定横幅显示在前端页面顶部，留空则不显示"></div>
-              <div class="col-md-6"><label class="form-label">建站时间</label><input value="<?php echo htmlspecialchars($conf['time'], ENT_QUOTES);?>" type="date" class="form-control" name="time"></div>
-              <div class="col-md-6"><label class="form-label">网站关键词</label><textarea rows="2" class="form-control" name="keywords"><?php echo htmlspecialchars($conf['keywords'], ENT_QUOTES, 'UTF-8');?></textarea></div>
-              <div class="col-md-6"><label class="form-label">网站描述</label><textarea rows="2" class="form-control" name="description"><?php echo htmlspecialchars($conf['description'], ENT_QUOTES, 'UTF-8');?></textarea></div>
-              <div class="col-12"><label class="form-label">弹窗通知</label><textarea rows="2" class="form-control" name="jieshao" placeholder="内容为空时前端不显示；有内容时用户首次打开网站弹出，关闭后不再弹出，直到内容修改后重新弹出"><?php echo htmlspecialchars($conf['jieshao'], ENT_QUOTES, 'UTF-8');?></textarea></div>
+              <div class="col-md-6"><label class="form-label">网站名称</label><input value="<?php echo htmlspecialchars($conf['name'] ?? '', ENT_QUOTES, 'UTF-8');?>" type="text" class="form-control" name="name"></div>
+              <div class="col-md-6"><label class="form-label">网站标题</label><input value="<?php echo htmlspecialchars($conf['title'] ?? '', ENT_QUOTES, 'UTF-8');?>" type="text" class="form-control" name="title"></div>
+              <div class="col-md-6"><label class="form-label">联系邮箱</label><input value="<?php echo htmlspecialchars($conf['email'] ?? '', ENT_QUOTES, 'UTF-8');?>" type="text" class="form-control" name="email" placeholder="选填，显示在前端快速指南卡片里"></div>
+              <div class="col-md-6"><label class="form-label">ICP备案号</label><input value="<?php echo htmlspecialchars($conf['icp'] ?? '', ENT_QUOTES, 'UTF-8');?>" type="text" class="form-control" name="icp"></div>
+              <div class="col-md-6"><label class="form-label">警告</label><input value="<?php echo htmlspecialchars($conf['Copyright'] ?? '', ENT_QUOTES, 'UTF-8');?>" type="text" class="form-control" name="Copyright" placeholder="以固定横幅显示在前端页面顶部，留空则不显示"></div>
+              <div class="col-md-6"><label class="form-label">建站时间</label><input value="<?php echo htmlspecialchars($conf['time'] ?? '', ENT_QUOTES, 'UTF-8');?>" type="date" class="form-control" name="time"></div>
+              <div class="col-md-6"><label class="form-label">网站关键词</label><textarea rows="2" class="form-control" name="keywords"><?php echo htmlspecialchars($conf['keywords'] ?? '', ENT_QUOTES, 'UTF-8');?></textarea></div>
+              <div class="col-md-6"><label class="form-label">网站描述</label><textarea rows="2" class="form-control" name="description"><?php echo htmlspecialchars($conf['description'] ?? '', ENT_QUOTES, 'UTF-8');?></textarea></div>
+              <div class="col-12"><label class="form-label">弹窗通知</label><textarea rows="2" class="form-control" name="jieshao" placeholder="内容为空时前端不显示；有内容时用户首次打开网站弹出，关闭后不再弹出，直到内容修改后重新弹出"><?php echo htmlspecialchars($conf['jieshao'] ?? '', ENT_QUOTES, 'UTF-8');?></textarea></div>
             </div>
             <div class="mt-4">
               <button type="button" class="btn btn-primary" onclick="doSave()"><i class="mdi mdi-content-save"></i> 保存设置</button>

@@ -228,7 +228,8 @@ if(isset($_POST['action'])) {
         log_admin_action($DB, 'redeem_delete_selected', 'redeem_code', 0, ['count' => $affected, 'code_prefixes' => $codeSummary]);
         $skipped = count($intIds) - $affected;
         $msg = "已删除 {$affected} 个未使用的兑换码";
-        if($skipped > 0) $msg .= "（跳过 {$skipped} 个已使用/已过期的）";
+        // 过期但未使用的兑换码属于可删除范围，跳过项只可能是"已使用"
+        if($skipped > 0) $msg .= "（跳过 {$skipped} 个已使用的）";
         json_exit(0, $msg, ['count' => $affected, 'skipped' => $skipped]);
     }
 
@@ -998,11 +999,17 @@ function exportGeneratedCodes(){
 
 // ============ 导出（按当前筛选） ============
 function exportCodes(){
+    var filter = $('#filterSelect').val();
+    // 与服务端白名单保持一致：仅允许导出未使用/已过期，避免"筛选全部但只导出未使用"的误解
+    if(filter !== 'unused' && filter !== 'expired'){
+        toast('warning', '仅支持导出「未使用」或「已过期」的兑换码，请先切换筛选条件', 4000);
+        return;
+    }
     $.ajax({
         url:'redeem.php', type:'POST', dataType:'text',
         data:{
             action:'export',
-            filter:$('#filterSelect').val(),
+            filter:filter,
             batch_no:$('#batchInput').val().trim()
         },
         success:function(text){

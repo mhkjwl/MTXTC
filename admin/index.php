@@ -62,7 +62,7 @@ if(!isset($islogin) || $islogin!=1) exit("<script>location.href='login.php';</sc
         </li>
         <li class="nav-item">
           <a class="ct-open-tab" href="upimg.php">
-            <i class="mdi mdi-image-outline"></i><span>LOGO修改</span>
+            <i class="mdi mdi-image-outline"></i><span>站点图标（ICO）</span>
           </a>
         </li>
         <li class="nav-item">
@@ -150,7 +150,7 @@ if(!isset($islogin) || $islogin!=1) exit("<script>location.href='login.php';</sc
         <div class="dropdown">
           <a href="javascript:void(0)" data-bs-toggle="dropdown" class="admin-user-dropdown">
             <img class="avatar" src="style/images/avatar.jpg" alt="头像" />
-            <span class="user-name"><?php echo htmlspecialchars($conf['admin_user'], ENT_QUOTES, 'UTF-8');?></span>
+            <span class="user-name"><?php echo htmlspecialchars($conf['admin_user'] ?? '', ENT_QUOTES, 'UTF-8');?></span>
             <i class="mdi mdi-chevron-down" style="font-size:16px;color:#94a3b8;"></i>
           </a>
           <ul class="dropdown-menu dropdown-menu-end">

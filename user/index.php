@@ -170,9 +170,12 @@ if(!$isSuperAdmin) {
       .profile-avatar{width:64px;height:64px;font-size:26px}
       .profile-head{flex-direction:column;align-items:center;gap:12px}
       .profile-name-row{justify-content:center}
-      .profile-meta{grid-template-columns:1fr 1fr;gap:10px 16px}
+      .profile-head-actions{flex-direction:column;gap:10px;width:100%}
+      .profile-head-actions .profile-pwd-btn{width:100%;justify-content:center}
+      .profile-meta{grid-template-columns:1fr;gap:10px 16px}
       .profile-meta-item{justify-content:center;font-size:0.84rem}
-      .stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+      .stats-grid{grid-template-columns:1fr!important}
+      #home-section .hero-grid{grid-template-columns:1fr}
     }
 
     /* Toast 通知 */
@@ -272,6 +275,7 @@ if(!$isSuperAdmin) {
     .profile-avatar img{width:100%;height:100%;object-fit:cover}
     .profile-info{flex:1;min-width:0}
     .profile-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+    .profile-head-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;flex-shrink:0}
     .profile-name-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
     .profile-name{margin:0;font-size:1.4rem;font-weight:800;color:var(--text)}
     .profile-pwd-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,0.7);color:var(--text);font-size:0.86rem;font-weight:600;cursor:pointer;transition:all .2s ease;flex-shrink:0}
@@ -567,9 +571,14 @@ if(!$isSuperAdmin) {
               <h3 class="profile-name"><?php echo htmlspecialchars($username, ENT_QUOTES, 'UTF-8'); ?></h3>
               <span class="role-badge <?php echo $isSuperAdmin ? 'admin' : 'user'; ?>"><?php echo $isSuperAdmin ? '超级管理员' : '普通用户'; ?></span>
             </div>
-            <button type="button" class="profile-pwd-btn" id="profileChangePwdBtn" title="修改密码">
-              <i class="mdi mdi-lock-reset"></i> 修改密码
-            </button>
+            <div class="profile-head-actions">
+              <button type="button" class="profile-pwd-btn" id="profileChangePwdBtn" title="修改密码">
+                <i class="mdi mdi-lock-reset"></i> 修改密码
+              </button>
+              <a href="logout.php" class="profile-pwd-btn" title="退出登录" style="text-decoration:none;">
+                <i class="mdi mdi-logout"></i> 退出登录
+              </a>
+            </div>
           </div>
           <div class="profile-meta">
             <div class="profile-meta-item">
@@ -865,7 +874,6 @@ if(!$isSuperAdmin) {
         <?php if(!empty($conf['icp'])): ?>
         <div style="margin-top:4px;"><a target="_blank" href="https://beian.miit.gov.cn/" rel="noopener"><?php echo htmlspecialchars($conf['icp']);?></a></div>
         <?php endif; ?>
-        <div style="margin-top:4px;"><a href="../index.php">返回首页</a> · <a href="logout.php">退出登录</a></div>
       </footer>
     </main>
   </div>
@@ -1071,6 +1079,8 @@ document.getElementById('sidebarOverlay').addEventListener('click', function(){
 });
 // ===== Section 切换显示 =====
 // 隐藏所有 .page-section，仅显示目标 section；同步侧边栏 active 状态
+// sectionFirstLoad：首屏初始化标志，避免与脚本末尾的预加载（loadStats/loadImages/loadPackageInfo/akLoadList）重复触发 AJAX
+var sectionFirstLoad = true;
 function switchSection(targetId, skipPush){
   // 隐藏所有 .page-section
   document.querySelectorAll('.page-section').forEach(function(el){
@@ -1090,15 +1100,40 @@ function switchSection(targetId, skipPush){
   });
   var activeLink = document.querySelector('.side-nav a[href="#' + targetId + '"]');
   if(activeLink) activeLink.classList.add('active');
-  // 特殊：pricing-section 触发 AJAX 加载
+  // 切换区块时 AJAX 无感刷新对应内容（§ 2.5 无刷新操作规范）
+  // pricing-section 总是触发加载（loadPricingSection 有 data-loaded 缓存，重复调用安全）
+  // 其他区块首屏跳过（避免与脚本末尾的预加载重复请求），用户主动切换时刷新
   if(targetId === 'pricing-section'){
     loadPricingSection();
+  } else if(!sectionFirstLoad){
+    refreshSection(targetId);
   }
   // 同步 URL（不带 hash），用 pushState 便于浏览器前进/后退
   // 注意：仅用 history.state 记忆 section，不用 sessionStorage
   // 原因：history.state 跨页面跳转后丢失，重新进入用户中心时回到首页；页面内刷新时保留，仍能恢复当前 section
   if(!skipPush && history.pushState){
     history.pushState({section: targetId}, '', window.location.pathname + window.location.search);
+  }
+  sectionFirstLoad = false;
+}
+
+// 按区块刷新对应内容（用户切换 section 时触发，确保显示最新数据）
+function refreshSection(targetId){
+  switch(targetId){
+    case 'home-section':
+      // 首页：刷新统计卡片 + 套餐信息（上传/兑换/删除可能影响这些数据）
+      loadStats();
+      loadPackageInfo();
+      break;
+    case 'gallery-section':
+      // 我的图片：刷新图片列表（保持当前页）+ 统计（删除/上传后数量变化）
+      loadImages(currentPage);
+      loadStats();
+      break;
+    case 'apikeys-section':
+      // API 密钥：刷新密钥列表（生成/重置/启停/删除后状态同步）
+      akLoadList();
+      break;
   }
 }
 
@@ -1862,14 +1897,27 @@ function loadPackageInfo(){
 
       nameEl.textContent = info.package_name || '免费版';
 
-      // 同步填充个人信息卡的套餐名
+      // 同步填充个人信息卡的套餐名 + 到期时间
       var profilePkgEl = document.getElementById('profilePkgName');
       if(profilePkgEl){
         var pkgText = info.package_name || '免费版';
         if(info.is_expired){
           pkgText += '（已过期）';
         } else if(info.level > 0){
-          pkgText += ' · VIP' + info.level;
+          // 避免套餐名已含 VIP 等级时重复拼接（如 package_name="VIP1" + level=1 → "VIP1 · VIP1"）
+          var levelStr = 'VIP' + info.level;
+          if(pkgText.toUpperCase().indexOf(levelStr.toUpperCase()) === -1){
+            pkgText += ' · VIP' + info.level;
+          }
+        }
+        // 追加到期时间：永久 / 具体日期（已过期也显示，便于用户知晓过期时间）
+        if(info.is_permanent){
+          pkgText += ' · 永久';
+        } else if(info.expire_time){
+          var expDate = String(info.expire_time).replace('T',' ').substring(0, 10);
+          if(expDate){
+            pkgText += ' · ' + expDate + '到期';
+          }
         }
         profilePkgEl.textContent = pkgText;
       }

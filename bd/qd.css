@@ -214,6 +214,9 @@ body::after {
   padding: 14px 18px;
   overflow: hidden;
 }
+.contact-card .section-caption {
+  font-weight: 700;
+}
 .contact-email {
   display: flex;
   align-items: center;
@@ -229,6 +232,7 @@ body::after {
   word-break: break-all;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-weight: 600;
 }
 .contact-email:hover {
   color: #7b8cff;

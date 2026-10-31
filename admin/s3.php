@@ -66,8 +66,8 @@ if(isset($_POST['action'])) {
             exit;
         }
         $cfg = $s3Configs[$id];
-        // L11 修复：用固定标志位 __KEEP_EXISTING__ 替代易被用户输入绕过的 ••• 占位符
-        $cfg['secret_key'] = '__KEEP_EXISTING__';
+        // 与前端回填占位符保持一致（16 个 •），保存时据此保留原值
+        $cfg['secret_key'] = '••••••••••••••••';
         // M17 修复：access_key 同样掩码（仅显示后4位），与 secret_key 处理一致
         $ak = isset($cfg['access_key']) ? $cfg['access_key'] : '';
         $cfg['access_key'] = strlen($ak) > 4 ? str_repeat('•', strlen($ak) - 4) . substr($ak, -4) : '••••';
@@ -134,8 +134,8 @@ if(isset($_POST['action'])) {
             exit;
         }
 
-        // 编辑时 secret_key 为占位符则保留原值
-        if($entry['secret_key'] === '••••••••••••••••' && $editId !== '' && isset($s3Configs[(int)$editId])) {
+        // 编辑时 secret_key 为占位符（或旧版 __KEEP_EXISTING__ 标志）则保留原值
+        if(in_array($entry['secret_key'], ['••••••••••••••••', '__KEEP_EXISTING__'], true) && $editId !== '' && isset($s3Configs[(int)$editId])) {
             $entry['secret_key'] = $s3Configs[(int)$editId]['secret_key'];
         }
         // M17 修复：编辑时 access_key 为掩码（含 •）则保留原值
@@ -178,7 +178,7 @@ if(isset($_POST['action'])) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>S3 存储设置 - <?php echo $lang->admin->title;?></title>
-<link rel="preload" href="style/fonts/materialdesign-icons-webfont.woff2?v=6.5.95" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="style/fonts/materialdesignicons-webfont.woff2?v=6.5.95" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style/css/bootstrap.min.css">
 <link rel="stylesheet" href="style/css/materialdesignicons.min.css">
 <link rel="stylesheet" href="style/css/admin.css">

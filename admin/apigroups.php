@@ -118,8 +118,7 @@ function count_group_items_by_status($DB, $groupId, $conf, $s3Configs) {
             // $s3Configs 已过滤为仅 enabled==1 的条目
             if(isset($s3Configs[$s3Id])) $enabled++;
         } else {
-            $enableKey = 'api_' . $item['api_type'] . '_enable';
-            if(isset($conf[$enableKey]) && $conf[$enableKey] == '1') $enabled++;
+            if(api_config_enabled($conf, $item['api_type'])) $enabled++;
         }
     }
     return array('enabled' => $enabled, 'total' => $total);
@@ -172,8 +171,8 @@ if(isset($_POST['action'])) {
             echo json_encode(array('code'=>1, 'msg'=>'分组创建失败，请重试'));
             exit;
         }
-        // 若提交了接口绑定关系，一并保存
-        if(isset($_POST['apis']) || isset($_POST['s3_ids'])) {
+        // 若提交了接口绑定关系，一并保存（binding_payload 用于标识"提交了空绑定"）
+        if(isset($_POST['apis']) || isset($_POST['s3_ids']) || isset($_POST['binding_payload'])) {
             if(saveGroupItems($DB, $newId, $_POST) === false) {
                 echo json_encode(array('code'=>1, 'msg'=>'接口绑定保存失败，请重试'));
                 exit;
@@ -200,7 +199,7 @@ if(isset($_POST['action'])) {
         if($DB->query_prepared("UPDATE eecms_api_groups SET name=?, description=? WHERE id=?", 'ssi', [$name, $description, $id]) === false) {
             echo json_encode(array('code'=>1, 'msg'=>'分组更新失败，请重试！')); exit;
         }
-        if(isset($_POST['apis']) || isset($_POST['s3_ids'])) {
+        if(isset($_POST['apis']) || isset($_POST['s3_ids']) || isset($_POST['binding_payload'])) {
             if(saveGroupItems($DB, $id, $_POST) === false) {
                 echo json_encode(array('code'=>1, 'msg'=>'接口绑定保存失败，请重试'));
                 exit;
@@ -216,6 +215,12 @@ if(isset($_POST['action'])) {
         $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
         if($id <= 0) {
             echo json_encode(array('code'=>1, 'msg'=>'参数错误'));
+            exit;
+        }
+        // 存在性校验：避免删除不存在的分组也返回成功
+        $grpExists = pkg_safe_get_row_prepared($DB, "SELECT id FROM eecms_api_groups WHERE id=?", 'i', [$id]);
+        if(!$grpExists) {
+            echo json_encode(array('code'=>1, 'msg'=>'分组不存在或已被删除，请刷新后重试'));
             exit;
         }
         // 检查是否有启用的套餐正在使用此分组
@@ -280,11 +285,10 @@ if(isset($_POST['action'])) {
         // 图床接口实时状态
         $apiStatuses = array();
         foreach($apiConfig as $key => $cfg) {
-            $enableKey = 'api_'.$key.'_enable';
             $apiStatuses[] = array(
                 'key'     => (string)$key,
                 'name'    => $cfg['name'],
-                'enabled' => (isset($conf[$enableKey]) && $conf[$enableKey] == '1'),
+                'enabled' => api_config_enabled($conf, (string)$key),
             );
         }
 
@@ -713,7 +717,7 @@ function openItemsModal(id){
             $(c).find('input.s3-check:checked').each(function(){ s3ids.push($(this).val()); });
             return $.ajax({
                 url:'', type:'POST',
-                data:{action:'save_items', group_id:id, apis:apis, s3_ids:s3ids},
+                data:{action:'save_items', group_id:id, apis:apis, s3_ids:s3ids, binding_payload:1},
                 dataType:'json'
             }).then(function(resp){
                 if(resp.code !== 0){

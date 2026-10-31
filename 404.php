@@ -3,7 +3,7 @@
  * @file 404.php
  * @description 404 页面不存在错误页，返回 404 状态码并渲染提示界面
  * @author AI
- * @version 1.1.0-dev
+ * @version 1.2.0
  * @date 2026-08-04
  */
 declare(strict_types=1);

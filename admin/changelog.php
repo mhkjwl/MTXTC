@@ -39,7 +39,6 @@ function fetch_remote_update_info(): array
     curl_setopt($ch1, CURLOPT_HTTPHEADER, ['Accept: application/json']);
     $verRaw = curl_exec($ch1);
     $verHttp = curl_getinfo($ch1, CURLINFO_HTTP_CODE);
-    $verErr = curl_error($ch1);
     curl_close($ch1);
 
     if($verRaw !== false && $verHttp === 200) {
@@ -53,8 +52,8 @@ function fetch_remote_update_info(): array
     } else {
         // version.json 不可用（如远程尚未发布更新包）：
         // 记录原因但继续抓取日志，降级为「仅展示日志」模式
-        $result['error'] = '远程未发布更新包（version.json 不可用，HTTP ' . $verHttp . '）'
-            . ($verErr !== '' ? '（' . $verErr . '）' : '');
+        // 提示文案不含技术细节（version.json/HTTP 状态码），避免向用户暴露内部实现
+        $result['error'] = '远程更新包暂未发布，在线升级暂不可用';
     }
 
     // 2. 获取更新日志 api/api.php（无论 version.json 是否可用都抓取）
@@ -79,59 +78,8 @@ function fetch_remote_update_info(): array
     return $result;
 }
 
-/**
- * 远程日志条目类型 → Bootstrap 徽章 class
- * 依据：文档 § 七 changelog 条目类型表
- *
- * @param string $type 条目类型
- * @return array{class:string,label:string}
- */
-function get_remote_type_badge(string $type): array
-{
-    $map = [
-        'feature'     => ['class' => 'bg-primary', 'label' => '新功能'],
-        'fix'         => ['class' => 'bg-danger', 'label' => '修复'],
-        'improvement' => ['class' => 'bg-success', 'label' => '优化'],
-        'security'    => ['class' => 'bg-warning text-dark', 'label' => '安全'],
-        'breaking'    => ['class' => 'bg-purple', 'label' => '破坏性'],
-        'deprecation' => ['class' => 'bg-secondary', 'label' => '废弃'],
-    ];
-    $key = strtolower(trim($type));
-    return $map[$key] ?? ['class' => 'bg-secondary', 'label' => htmlspecialchars($type, ENT_QUOTES, 'UTF-8')];
-}
-
-/**
- * 渲染远程更新日志卡片 HTML（PHP 端复用）
- *
- * @param mixed $changelog 远程日志数组（api/api.php 的 data 字段）
- * @return string 卡片 HTML
- */
-function render_remote_changelog_html($changelog): string
-{
-    if(empty($changelog) || !is_array($changelog)) {
-        return '<div class="ou-empty">远程暂无更新日志</div>';
-    }
-    $html = '';
-    foreach($changelog as $logEntry) {
-        if(!is_array($logEntry)) continue;
-        $logVer  = htmlspecialchars((string)($logEntry['version'] ?? ''), ENT_QUOTES, 'UTF-8');
-        $logDate = htmlspecialchars((string)($logEntry['date'] ?? ''), ENT_QUOTES, 'UTF-8');
-        $items   = is_array($logEntry['items'] ?? null) ? $logEntry['items'] : [];
-        $html .= '<div class="ou-ver-card">'
-               . '<div class="ou-ver-head"><span class="ou-ver-num">v' . $logVer . '</span>'
-               . '<span class="ou-ver-date">' . $logDate . '</span></div>'
-               . '<div class="ou-ver-body"><ul class="ou-changelog-list">';
-        foreach($items as $item) {
-            if(!is_array($item)) continue;
-            $badge = get_remote_type_badge((string)($item['type'] ?? ''));
-            $desc  = htmlspecialchars((string)($item['description'] ?? ''), ENT_QUOTES, 'UTF-8');
-            $html .= '<li><span class="ou-item-badge ' . $badge['class'] . '">' . $badge['label'] . '</span>'
-                   . '<span class="ou-item-desc">' . $desc . '</span></li>';
-        }
-        $html .= '</ul></div></div>';
-    }
-    return $html;
-}
+// 注：远程日志的渲染已完全由前端 JS（renderChangelogHtml）完成，
+// 原 PHP 端 render_remote_changelog_html()/get_remote_type_badge() 已成为死代码，已移除。
 
 /**
  * 获取本地版本号（被动识别）
@@ -150,6 +98,18 @@ function get_local_version(): string
         }
     }
     return defined('APP_VERSION') ? APP_VERSION : '1.0.0';
+}
+
+/**
+ * 规范化版本号：去除预发布后缀（-dev/-alpha/-beta/-rc 等）
+ * 用于版本比较时忽略开发版/预发布版标识，避免 1.3.10-dev 与 1.3.10 误判为不同版本
+ *
+ * @param string $ver 原始版本号（如 1.3.10-dev）
+ * @return string 规范化后的版本号（如 1.3.10）
+ */
+function normalize_version(string $ver): string
+{
+    return preg_replace('/-([a-zA-Z]+).*$/', '', $ver);
 }
 
 /**
@@ -227,7 +187,7 @@ if(isset($_GET['action']) && $_GET['action'] === 'check_update') {
     $remote = fetch_remote_update_info();
     $localVer = get_local_version();
     $hasUpdate = ($remote['ok'] && isset($remote['version']['latest_version']))
-        ? (version_compare($localVer, $remote['version']['latest_version']) < 0)
+        ? (version_compare(normalize_version($localVer), $remote['version']['latest_version']) < 0)
         : false;
     echo json_encode([
         'code' => 0,
@@ -267,7 +227,7 @@ if(isset($_GET['action']) && $_GET['action'] === 'do_update') {
     }
     $rv = $remote['version'];
     $remoteVer = $rv['latest_version'];
-    if(version_compare($localVer, $remoteVer) >= 0) {
+    if(version_compare(normalize_version($localVer), $remoteVer) >= 0) {
         echo json_encode(['code' => 1, 'msg' => '当前已是最新版本，无需更新'], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -347,9 +307,14 @@ if(isset($_GET['action']) && $_GET['action'] === 'do_update') {
     }
     // 排除目录（对齐文档 § 九「安全机制-文件排除」+ gxrz Updater.class.php）：
     // client/（更新器自身）、temp_update/（临时）、backup/（备份）、config/（数据库配置等敏感文件）、.git/
-    $excludeDirs = ['backup/', '.git/', 'config/', 'temp_update/', 'client/'];
+    // config.php（数据库凭据）与 api/v1/data/（v1 API 令牌库）在升级包内是空模板，
+    // 覆盖会导致「掉安装」和令牌丢失，必须跳过
+    $excludeDirs = ['backup/', '.git/', 'config/', 'temp_update/', 'client/', 'config.php', 'api/v1/data/'];
+    $rootReal = realpath(ROOT) ?: ROOT;
     for($i = 0; $i < $zip->numFiles; $i++) {
-        $entryName = $zip->getNameIndex($i);
+        $entryName = (string)$zip->getNameIndex($i);
+        if($entryName === '' || strpos($entryName, "\0") !== false) continue;
+        $entryName = str_replace('\\', '/', $entryName);
         $skip = false;
         foreach($excludeDirs as $ex) {
             if(strpos($entryName, $ex) === 0) {
@@ -358,31 +323,48 @@ if(isset($_GET['action']) && $_GET['action'] === 'do_update') {
             }
         }
         if($skip) continue;
+        // 拒绝绝对路径与路径穿越
+        if($entryName[0] === '/' || preg_match('#(^|/)\.\.(/|$)#', $entryName)) continue;
 
         $targetPath = ROOT . $entryName;
-        // 防路径遍历
-        if(strpos(realpath(dirname($targetPath)) ?: '', realpath(ROOT) ?: '') !== 0) continue;
+        $dir = dirname($targetPath);
+        // 先建目录再校验真实路径：目标目录原本不存在时 realpath 返回 false，
+        // 原实现会因此把"新增目录下的文件"整批跳过，导致升级不完整
+        if(!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) continue;
+        $dirReal = realpath($dir);
+        if($dirReal === false || strpos($dirReal, $rootReal) !== 0) continue;
 
-        if(substr($entryName, -1) === '/') {
-            if(!is_dir($targetPath)) @mkdir($targetPath, 0755, true);
-        } else {
-            $dir = dirname($targetPath);
-            if(!is_dir($dir)) @mkdir($dir, 0755, true);
-            file_put_contents($targetPath, $zip->getFromIndex($i));
-        }
+        if(substr($entryName, -1) === '/') continue; // 目录项已由 mkdir 处理
+        $content = $zip->getFromIndex($i);
+        if($content === false) continue;
+        file_put_contents($targetPath, $content);
     }
     $zip->close();
     $steps[] = '解压覆盖 ✓';
 
     // Step 6: 执行迁移脚本（如有）
-    $migrationScript = $rv['migration_script'] ?? null;
-    if(!empty($migrationScript)) {
-        $migrateFile = ROOT . $migrationScript;
-        if(file_exists($migrateFile)) {
-            @include($migrateFile);
-            @unlink($migrateFile);
+    // 安全：签名只覆盖 zip，version.json 本身无签名，禁止直接 include 远程指定的任意文件。
+    // 仅允许白名单目录下的相对路径，且文件 SHA-256 必须与 version.json 中的 migration_sha256 一致
+    $migrationScript = isset($rv['migration_script']) ? (string)$rv['migration_script'] : '';
+    $migrationHash   = isset($rv['migration_sha256']) ? (string)$rv['migration_sha256'] : '';
+    if($migrationScript !== '') {
+        $migrationScript = str_replace('\\', '/', $migrationScript);
+        $pathAllowed = (bool)preg_match('#^(install|migrate|migration)/[A-Za-z0-9_\-/\.]+\.php$#', $migrationScript)
+            && strpos($migrationScript, '..') === false;
+        if(!$pathAllowed) {
+            $steps[] = '跳过迁移脚本（路径不在白名单）';
+        } elseif($migrationHash === '') {
+            $steps[] = '跳过迁移脚本（未提供校验值）';
+        } else {
+            $migrateFile = ROOT . $migrationScript;
+            if(is_file($migrateFile) && hash_equals($migrationHash, (string)hash_file('sha256', $migrateFile))) {
+                @include($migrateFile);
+                @unlink($migrateFile);
+                $steps[] = '执行迁移 ✓';
+            } else {
+                $steps[] = '跳过迁移脚本（校验失败或文件不存在）';
+            }
         }
-        $steps[] = '执行迁移 ✓';
     }
 
     // Step 7: 被动识别版本号（读取覆盖后的 version.json，禁止主动写入）
@@ -405,12 +387,9 @@ if(isset($_GET['action']) && $_GET['action'] === 'do_update') {
     exit;
 }
 
-// 服务端预取远程信息（页面首次加载时展示）
-$remoteUpdate = fetch_remote_update_info();
+// 不在页面渲染阶段同步请求远程（2 次 curl 最坏会阻塞 20 秒），
+// 改为先输出本地版本骨架，再由前端异步调用 ?action=check_update 填充
 $localVersion = get_local_version();
-$hasRemoteUpdate = ($remoteUpdate['ok'] && isset($remoteUpdate['version']['latest_version']))
-    ? (version_compare($localVersion, $remoteUpdate['version']['latest_version']) < 0)
-    : false;
 ?>
 <!DOCTYPE html>
 <html lang="zh">
@@ -481,63 +460,16 @@ html,body{height:100%;margin:0}body{overflow:auto}.admin-content{padding:16px 20
       </button>
     </div>
     <div class="ou-body" id="ouBody">
-      <?php if(!$remoteUpdate['ok']): ?>
-        <div class="ou-status-row">
-          <div class="ou-status-item">
-            <span class="label">本地版本</span>
-            <span class="value">v<?php echo htmlspecialchars($localVersion, ENT_QUOTES, 'UTF-8'); ?></span>
-          </div>
-          <span class="ou-status-badge ou-badge-error">
-            <i class="mdi mdi-alert-circle-outline"></i> 远程未发布更新包
-          </span>
+      <div class="ou-status-row">
+        <div class="ou-status-item">
+          <span class="label">本地版本</span>
+          <span class="value">v<?php echo htmlspecialchars($localVersion, ENT_QUOTES, 'UTF-8'); ?></span>
         </div>
-        <?php if(!empty($remoteUpdate['changelog']) && is_array($remoteUpdate['changelog'])): ?>
-          <div class="ou-info-line">
-            <i class="mdi mdi-information-outline"></i>
-            <?php echo htmlspecialchars($remoteUpdate['error'] ?? '无法连接更新服务器', ENT_QUOTES, 'UTF-8'); ?>
-            ，以下为远程更新日志；待管理主站发布更新包后可在线升级。
-          </div>
-          <?php echo render_remote_changelog_html($remoteUpdate['changelog']); ?>
-        <?php else: ?>
-          <div class="ou-empty"><?php echo htmlspecialchars($remoteUpdate['error'] ?? '无法连接更新服务器', ENT_QUOTES, 'UTF-8'); ?></div>
-        <?php endif; ?>
-      <?php else:
-        $rv = $remoteUpdate['version'];
-        $remoteVer = $rv['latest_version'] ?? '-';
-        $releaseDate = $rv['release_date'] ?? '-';
-        $pkgType = $rv['package_type'] ?? 'update';
-        $minPhp = $rv['min_php_version'] ?? '-';
-      ?>
-        <div class="ou-status-row">
-          <div class="ou-status-item">
-            <span class="label">本地版本</span>
-            <span class="value">v<?php echo htmlspecialchars($localVersion, ENT_QUOTES, 'UTF-8'); ?></span>
-          </div>
-          <div class="ou-version-compare"><i class="mdi mdi-arrow-right"></i></div>
-          <div class="ou-status-item">
-            <span class="label">远程最新</span>
-            <span class="value">v<?php echo htmlspecialchars($remoteVer, ENT_QUOTES, 'UTF-8'); ?></span>
-          </div>
-          <div class="ou-status-item">
-            <span class="label">发布日期</span>
-            <span class="value" style="font-family:inherit"><?php echo htmlspecialchars($releaseDate, ENT_QUOTES, 'UTF-8'); ?></span>
-          </div>
-          <?php if($hasRemoteUpdate): ?>
-            <span class="ou-status-badge ou-badge-update">
-              <i class="mdi mdi-arrow-up-bold-circle-outline"></i> 发现新版本
-            </span>
-            <button class="ou-btn-update" id="btnDoUpdate" onclick="doUpdate()">
-              <i class="mdi mdi-cloud-upload-outline"></i> 在线升级
-            </button>
-          <?php else: ?>
-            <span class="ou-status-badge ou-badge-latest">
-              <i class="mdi mdi-check-circle-outline"></i> 已是最新版本
-            </span>
-          <?php endif; ?>
-        </div>
-
-        <?php echo render_remote_changelog_html($remoteUpdate['changelog'] ?? null); ?>
-      <?php endif; ?>
+        <span class="ou-status-badge ou-badge-latest">
+          <i class="mdi mdi-loading mdi-spin"></i> 正在检查更新
+        </span>
+      </div>
+      <div class="ou-empty">正在连接更新服务器，请稍候…</div>
     </div>
   </div>
 
@@ -579,7 +511,7 @@ function renderRemoteUpdate(res) {
                   '<div class="ou-status-item"><span class="label">本地版本</span><span class="value">v' + escapeHtml(local) + '</span></div>' +
                   '<span class="ou-status-badge ou-badge-error"><i class="mdi mdi-alert-circle-outline"></i> 远程未发布更新包</span>' +
                 '</div>' +
-                '<div class="ou-info-line"><i class="mdi mdi-information-outline"></i> ' + escapeHtml(remote.error || '无法连接更新服务器') + '，以下为远程更新日志；待管理主站发布更新包后可在线升级。</div>' +
+                '<div class="ou-info-line"><i class="mdi mdi-information-outline"></i> ' + escapeHtml(remote.error || '远程更新包暂未发布') + '，仅展示远程更新日志。</div>' +
                 renderChangelogHtml(cl);
         } else {
             body.innerHTML = '<div class="ou-status-row"><div class="ou-status-item"><span class="label">本地版本</span><span class="value">v' + escapeHtml(local) + '</span></div><span class="ou-status-badge ou-badge-error"><i class="mdi mdi-alert-circle-outline"></i> 远程连接失败</span></div><div class="ou-empty">' + escapeHtml(remote.error || '无法连接更新服务器') + '</div>';
@@ -608,6 +540,18 @@ function renderRemoteUpdate(res) {
 function renderChangelogHtml(cl) {
     var changelogHtml = '';
     if(cl && Array.isArray(cl) && cl.length > 0) {
+        // 按版本号降序排序：最新版显示在最上面
+        cl = cl.slice().sort(function(a, b) {
+            var pa = String(a.version || '0').split('.');
+            var pb = String(b.version || '0').split('.');
+            var len = Math.max(pa.length, pb.length);
+            for(var i = 0; i < len; i++) {
+                var na = parseInt(pa[i] || '0', 10);
+                var nb = parseInt(pb[i] || '0', 10);
+                if(na !== nb) return nb - na;
+            }
+            return 0;
+        });
         cl.forEach(function(entry){
             var ev = escapeHtml(entry.version || '');
             var ed = escapeHtml(entry.date || '');
@@ -644,6 +588,9 @@ function escapeHtml(str) {
         return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
     });
 }
+
+// 页面渲染完成后再异步检查更新，避免同步 curl 阻塞页面（原实现最长阻塞 20 秒）
+refreshRemoteUpdate();
 </script>
 <script src="style/js/sweetalert2.min.js"></script>
 <meta name="csrf-token" content="<?php echo function_exists('csrf_token') ? csrf_token() : ''; ?>">

@@ -75,7 +75,7 @@ $enabledCount = 0;
 $disabledCount = 0;
 
 foreach ($apiList as &$api) {
-    $isEnabled = empty($api['enable']) ? true : (isset($conf[$api['enable']]) && $conf[$api['enable']] == '1');
+    $isEnabled = empty($api['enable']) ? true : api_config_enabled($conf, $api['key']);
     $api['enabled'] = $isEnabled;
     if ($isEnabled) {
         $enabledCount++;
@@ -85,7 +85,7 @@ foreach ($apiList as &$api) {
 }
 unset($api);
 
-$defaultApi = isset($conf['api_default']) ? $conf['api_default'] : '360';
+$defaultApi = isset($conf['api_default']) ? $conf['api_default'] : 'local';
 $defaultName = '未知';
 foreach ($apiList as $api) {
     if ($api['key'] === $defaultApi) {
@@ -107,12 +107,7 @@ elseif ($_tb >= 1048576)     { $totalSize = number_format($_tb / 1048576, 2) . '
 elseif ($_tb >= 1024)        { $totalSize = number_format($_tb / 1024, 2) . ' KB'; }
 else                         { $totalSize = $_tb . ' B'; }
 
-// 分页
-$perPage = 10;
-$totalPages = ceil($totalCount / $perPage);
-$page = isset($_GET['page']) ? max(1, min($totalPages, (int)$_GET['page'])) : 1;
-$start = ($page - 1) * $perPage;
-$pageList = array_slice($apiList, $start, $perPage);
+// 分页由前端 JS 完成（renderApiTable），服务端无需预切片
 ?>
 <!DOCTYPE html>
 <html lang="zh">
