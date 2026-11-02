@@ -154,14 +154,7 @@ $csrfToken = csrf_token();
 <link rel="stylesheet" href="style/css/materialdesignicons.min.css">
 <link rel="stylesheet" href="style/css/admin.css">
 <link rel="stylesheet" href="style/css/sweetalert2.min.css">
-<style>
-  html,body{height:100%;margin:0}body{overflow:auto}.admin-content{padding:16px 20px!important}
-  .ak-prefix{font-family:Consolas,Monaco,monospace;background:#f4f5f7;padding:2px 8px;border-radius:6px;color:#6d4aff;font-weight:600;font-size:12px}
-  .ak-status-on{color:#10b981;font-weight:600}
-  .ak-status-off{color:#ef4444;font-weight:600}
-  .ak-plainkey{font-family:Consolas,Monaco,monospace;background:#1e1b2e;color:#a5f3fc;padding:14px;border-radius:8px;word-break:break-all;font-size:13px;line-height:1.6;border:1px solid #3b3553}
-  .ak-mono{font-family:Consolas,Monaco,monospace;font-size:12px;color:#64748b}
-</style>
+<style>body{overflow:auto}</style>
 </head>
 <body>
 <div class="admin-content">

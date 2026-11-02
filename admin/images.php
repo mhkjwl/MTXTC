@@ -191,27 +191,7 @@ if(isset($_POST['action'])) {
 <link rel="stylesheet" href="style/css/bootstrap.min.css">
 <link rel="stylesheet" href="style/css/materialdesignicons.min.css">
 <link rel="stylesheet" href="style/css/admin.css">
-<style>
-html,body{height:100%;margin:0}body{overflow:auto}.admin-content{padding:16px 20px!important}
-.img-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
-.img-card{background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);transition:all .25s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column}
-.img-card:hover{transform:translateY(-3px);box-shadow:0 10px 30px rgba(0,0,0,.08)}
-.img-thumb{width:100%;height:160px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
-.img-thumb img{width:100%;height:100%;object-fit:cover}
-.img-thumb .img-thumb-placeholder{font-size:48px;color:#cbd5e1}
-.img-info{padding:12px;flex:1;display:flex;flex-direction:column;gap:4px}
-.img-info .img-name{font-size:13px;font-weight:600;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.img-info .img-meta{font-size:12px;color:#64748b;display:flex;flex-wrap:wrap;gap:8px}
-.img-info .img-meta span{display:inline-flex;align-items:center;gap:3px}
-.img-actions{padding:8px 12px;border-top:1px solid #f1f5f9;display:flex;gap:4px}
-.img-actions .btn{flex:1;padding:6px;font-size:12px}
-.api-badge{position:absolute;top:8px;left:8px;background:rgba(30,41,59,.8);color:#fff;font-size:11px;padding:2px 8px;border-radius:4px;backdrop-filter:blur(4px)}
-.img-check{position:absolute;top:8px;right:8px;width:20px;height:20px;cursor:pointer;z-index:2;accent-color:#3b82f6}
-.img-card.selected{outline:3px solid #3b82f6;outline-offset:-3px}
-.batch-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.batch-info{font-size:13px;color:#1e293b;background:#eff6ff;padding:4px 10px;border-radius:6px}
-.card-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-</style>
+<style>body{overflow:auto}</style>
 <link rel="stylesheet" href="style/css/sweetalert2.min.css">
 </head>
 <body>

@@ -350,48 +350,7 @@ if(isset($_POST['action'])) {
 <link rel="stylesheet" href="style/css/bootstrap.min.css">
 <link rel="stylesheet" href="style/css/materialdesignicons.min.css">
 <link rel="stylesheet" href="style/css/admin.css">
-<style>
-html,body{height:100%;margin:0}body{overflow:auto}.admin-content{padding:16px 20px!important}
-
-/* 顶部工具条 */
-.group-toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
-.group-toolbar .group-stat{font-size:13px;color:var(--admin-text-muted)}
-.group-toolbar .group-stat strong{color:var(--admin-primary);font-size:15px}
-
-/* 分组卡片网格 */
-.group-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
-.group-card{background:var(--admin-card-bg);border:1px solid var(--admin-border);border-radius:var(--admin-radius);padding:16px;display:flex;flex-direction:column;box-shadow:var(--admin-shadow);transition:box-shadow .2s,transform .2s}
-.group-card:hover{box-shadow:var(--admin-shadow-lg);transform:translateY(-2px)}
-.group-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px}
-.group-card-name{font-size:16px;font-weight:600;color:var(--admin-text);word-break:break-all;line-height:1.4}
-.group-card-badge{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600;white-space:nowrap;background:#eff6ff;color:#2563eb}
-.group-card-desc{font-size:13px;color:var(--admin-text-muted);min-height:20px;flex:1;margin-bottom:10px;word-break:break-all;line-height:1.6}
-.group-card-meta{font-size:12px;color:#94a3b8;margin-bottom:12px;display:flex;align-items:center;gap:4px}
-.group-card-actions{display:flex;gap:6px;flex-wrap:wrap}
-
-/* 接口绑定弹窗 */
-.items-modal-wrap{max-height:62vh;overflow-y:auto;padding-right:6px;text-align:left}
-.items-section{margin-bottom:20px}
-.items-section:last-child{margin-bottom:0}
-.items-section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;border-bottom:1px solid var(--admin-border);padding-bottom:8px}
-.items-section-title{font-weight:600;font-size:14px;color:var(--admin-text);display:flex;align-items:center;gap:6px}
-.items-section-title i{color:var(--admin-primary);font-size:18px}
-.items-toolbar{display:flex;gap:2px}
-.items-toolbar .btn{padding:2px 8px;font-size:12px}
-.items-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px}
-.items-grid-s3{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
-.item-check{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--admin-border);border-radius:var(--admin-radius-sm);cursor:pointer;font-size:13px;transition:all .15s;background:#fff;user-select:none}
-.item-check:hover{border-color:var(--admin-primary);background:#eff6ff}
-.item-check input{margin:0;cursor:pointer;accent-color:var(--admin-primary);width:15px;height:15px;flex-shrink:0}
-.item-check span{flex:1;word-break:break-all}
-.item-check-disabled{opacity:.55;cursor:not-allowed;background:#f8fafc}
-.item-check-disabled:hover{border-color:var(--admin-border);background:#f8fafc}
-.item-check-disabled input{cursor:not-allowed}
-.item-tag{font-size:11px;color:var(--admin-text-muted);background:#f1f5f9;padding:1px 6px;border-radius:4px;white-space:nowrap}
-.items-stat{font-size:12px;color:var(--admin-text-muted);margin-top:10px;text-align:right}
-.items-empty{text-align:center;padding:24px 12px;color:var(--admin-text-muted);font-size:13px;border:1px dashed var(--admin-border);border-radius:var(--admin-radius-sm)}
-.items-empty i{font-size:28px;display:block;margin-bottom:8px;color:#cbd5e1}
-</style>
+<style>body{overflow:auto}</style>
 <link rel="stylesheet" href="style/css/sweetalert2.min.css">
 </head>
 <body>

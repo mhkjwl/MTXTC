@@ -119,97 +119,13 @@ elseif(isset($islogin) && $islogin == 1) {
 <link rel="stylesheet" href="style/css/bootstrap.min.css">
 <link rel="stylesheet" href="style/css/sweetalert2.min.css">
 <link rel="stylesheet" href="style/css/admin.css">
-<style>
-:root {
-  --login-text: #1e293b;
-  --login-text-muted: #64748b;
-}
-/* 覆盖 admin.css 的 body 样式，登录页允许滚动 */
-body { overflow: auto; background: #0f172a; }
-.login-page {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 40%, #312e81 100%);
-  position: relative;
-  overflow: hidden;
-}
-.login-page::before {
-  content: '';
-  position: absolute;
-  width: 600px; height: 600px;
-  background: radial-gradient(circle, rgba(59,130,246,.18) 0%, transparent 70%);
-  top: -200px; right: -100px;
-  border-radius: 50%;
-}
-.login-page::after {
-  content: '';
-  position: absolute;
-  width: 450px; height: 450px;
-  background: radial-gradient(circle, rgba(139,92,246,.14) 0%, transparent 70%);
-  bottom: -120px; left: -80px;
-  border-radius: 50%;
-}
-.login-card {
-  position: relative; z-index: 1;
-  width: 400px; max-width: 92%;
-  background: rgba(255,255,255,.96);
-  backdrop-filter: blur(10px);
-  border-radius: 20px;
-  padding: 40px 36px;
-  box-shadow: 0 25px 60px rgba(0,0,0,.35);
-}
-.login-logo { text-align: center; margin-bottom: 24px; }
-.login-logo img { height: 38px; }
-.login-title {
-  text-align: center; font-size: 20px; font-weight: 700;
-  color: var(--login-text); margin-bottom: 6px;
-}
-.login-subtitle {
-  text-align: center; font-size: 13px; color: var(--login-text-muted);
-  margin-bottom: 28px;
-}
-.login-input-wrap {
-  position: relative; margin-bottom: 18px;
-}
-.login-input-wrap .mdi {
-  position: absolute; left: 14px; top: 50%;
-  transform: translateY(-50%);
-  font-size: 20px; color: #94a3b8;
-  z-index: 4; pointer-events: none;
-}
-.login-input-wrap .form-control {
-  padding-left: 44px; height: 48px; font-size: 14px;
-  border: 1.5px solid #e2e8f0; border-radius: 10px;
-  transition: all .25s;
-}
-.login-input-wrap .form-control:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59,130,246,.12);
-}
-.btn-login {
-  width: 100%; height: 48px; font-size: 15px; font-weight: 600;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #3b82f6, #6366f1);
-  border: none; color: #fff;
-  transition: all .25s;
-  margin-top: 6px;
-}
-.btn-login:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(59,130,246,.45);
-}
-.login-footer {
-  text-align: center; font-size: 12px; color: #94a3b8; margin-top: 22px;
-}
-</style>
+<style>body{overflow:auto;background:#f6f7f8}</style>
 </head>
 <body>
 <div class="login-page">
   <div class="login-card">
     <div class="login-logo">
-      <a href="index.php"><img alt="logo" src="style/images/logo-sidebar.png"></a>
+      <a href="index.php"><span class="brand-mark brand-mark-lg" aria-hidden="true">M</span><span class="login-brand-text">MTXTC<em>聚合图床</em></span></a>
     </div>
     <div class="login-title">欢迎回来</div>
     <div class="login-subtitle">请使用您的管理员账号登录系统</div>

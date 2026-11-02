@@ -120,7 +120,7 @@ else                         { $totalSize = $_tb . ' B'; }
 <link rel="stylesheet" href="style/css/materialdesignicons.min.css">
 <link rel="stylesheet" href="style/css/sweetalert2.min.css">
 <link rel="stylesheet" href="style/css/admin.css">
-<style>html,body{height:100%;margin:0}body{overflow:auto}.admin-content{padding:16px 20px!important}</style>
+<style>body{overflow:auto}</style>
 </head>
 <body>
 <div class="admin-content">
@@ -303,11 +303,11 @@ function renderApiTable(page){
                 ? '<span class="badge-status badge-status-on"><i class="mdi mdi-check"></i> 启用</span>'
                 : '<span class="badge-status badge-status-off"><i class="mdi mdi-close"></i> 关闭</span>';
             var defaultCell = a.is_default
-                ? '<i class="mdi mdi-star" style="color:#f59e0b;font-size:20px;"></i>'
-                : '<span style="color:#94a3b8;">-</span>';
+                ? '<i class="mdi mdi-star" style="color:var(--admin-warning);font-size:18px;"></i>'
+                : '<span style="color:var(--admin-text-faint);">-</span>';
             var actionBtn = a.enabled
-                ? '<button type="button" class="btn btn-warning btn-sm act-toggle" data-enable-key="'+escHtml(a.enable_key)+'" data-name="'+escHtml(a.name)+'" data-action="disable" title="禁用"><i class="mdi mdi-block-helper"></i></button>'
-                : '<button type="button" class="btn btn-success btn-sm act-toggle" data-enable-key="'+escHtml(a.enable_key)+'" data-name="'+escHtml(a.name)+'" data-action="enable" title="启用"><i class="mdi mdi-check"></i></button>';
+                ? '<button type="button" class="btn btn-outline-warning btn-sm act-toggle" data-enable-key="'+escHtml(a.enable_key)+'" data-name="'+escHtml(a.name)+'" data-action="disable" title="禁用"><i class="mdi mdi-block-helper"></i></button>'
+                : '<button type="button" class="btn btn-outline-success btn-sm act-toggle" data-enable-key="'+escHtml(a.enable_key)+'" data-name="'+escHtml(a.name)+'" data-action="enable" title="启用"><i class="mdi mdi-check"></i></button>';
             tbody.append('<tr id="api-row-'+escHtml(a.enable_key)+'">' +
                 '<td>'+(start+i+1)+'</td>' +
                 '<td><i class="mdi '+escHtml(a.icon)+' me-2" style="color:#94a3b8;"></i><strong>'+escHtml(a.name)+'</strong></td>' +
@@ -355,8 +355,8 @@ function toggleApi(enableKey, name, action){
         showCancelButton: true,
         confirmButtonText: '确认' + actText,
         cancelButtonText: '取消',
-        confirmButtonColor: action === 'enable' ? '#10b981' : '#f59e0b',
-        cancelButtonColor: '#94a3b8',
+        confirmButtonColor: action === 'enable' ? '#1a7f4b' : '#94620a',
+        cancelButtonColor: '#6b7280',
         reverseButtons: true
     }).then(function(result){
         if(!result.isConfirmed) return;
@@ -380,12 +380,12 @@ function toggleApi(enableKey, name, action){
                         var cells = row.querySelectorAll('td');
                         if(action === 'enable'){
                             cells[2].innerHTML = '<span class="badge-status badge-status-on"><i class="mdi mdi-check"></i> 启用</span>';
-                            cells[4].innerHTML = '<div class="btn-group btn-group-sm"><button type="button" class="btn btn-warning btn-sm act-toggle" data-enable-key="'+escHtml(enableKey)+'" data-name="'+escHtml(name)+'" data-action="disable" title="禁用"><i class="mdi mdi-block-helper"></i></button></div>';
+                            cells[4].innerHTML = '<div class="btn-group btn-group-sm"><button type="button" class="btn btn-outline-warning btn-sm act-toggle" data-enable-key="'+escHtml(enableKey)+'" data-name="'+escHtml(name)+'" data-action="disable" title="禁用"><i class="mdi mdi-block-helper"></i></button></div>';
                             var en = document.getElementById('statEnabled'); if(en){ en.textContent = parseInt(en.textContent,10)+1; }
                             var dis = document.getElementById('statDisabled'); if(dis){ dis.textContent = parseInt(dis.textContent,10)-1; }
                         } else {
                             cells[2].innerHTML = '<span class="badge-status badge-status-off"><i class="mdi mdi-close"></i> 关闭</span>';
-                            cells[4].innerHTML = '<div class="btn-group btn-group-sm"><button type="button" class="btn btn-success btn-sm act-toggle" data-enable-key="'+escHtml(enableKey)+'" data-name="'+escHtml(name)+'" data-action="enable" title="启用"><i class="mdi mdi-check"></i></button></div>';
+                            cells[4].innerHTML = '<div class="btn-group btn-group-sm"><button type="button" class="btn btn-outline-success btn-sm act-toggle" data-enable-key="'+escHtml(enableKey)+'" data-name="'+escHtml(name)+'" data-action="enable" title="启用"><i class="mdi mdi-check"></i></button></div>';
                             var en = document.getElementById('statEnabled'); if(en){ en.textContent = parseInt(en.textContent,10)-1; }
                             var dis = document.getElementById('statDisabled'); if(dis){ dis.textContent = parseInt(dis.textContent,10)+1; }
                         }

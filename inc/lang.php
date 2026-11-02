@@ -28,7 +28,7 @@ $lang->all = new stdClass(); // 初始化$lang->all为一个对象
 
 	$lang->admin->login = '后台登录';
 	$lang->admin->title = '管理中心';
-	$lang->admin->footer = '牧皇网络. All Rights Reserved.';
+	$lang->admin->footer = 'MTXTC · 聚合图床管理系统';
 
 	$lang->admin->index = '后台首页';
 	$lang->admin->set = '系统设置';

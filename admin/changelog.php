@@ -402,45 +402,7 @@ $localVersion = get_local_version();
 <link rel="stylesheet" href="style/css/materialdesignicons.min.css">
 <link rel="stylesheet" href="style/css/admin.css">
 <link rel="stylesheet" href="style/css/sweetalert2.min.css">
-<style>
-html,body{height:100%;margin:0}body{overflow:auto}.admin-content{padding:16px 20px!important}
-/* 在线更新检查区块 */
-.online-update-section{margin-bottom:24px;border:1px solid var(--admin-border);border-radius:var(--admin-radius);overflow:hidden;background:var(--admin-card-bg);box-shadow:var(--admin-shadow)}
-.online-update-section .ou-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:linear-gradient(135deg,rgba(59,130,246,0.08),rgba(99,102,241,0.06));border-bottom:1px solid var(--admin-border)}
-.online-update-section .ou-title{display:flex;align-items:center;gap:8px;font-size:1.05rem;font-weight:700;color:var(--admin-text)}
-.online-update-section .ou-title i{font-size:22px;color:var(--admin-primary)}
-.online-update-section .ou-refresh{padding:5px 14px;font-size:0.82rem;border-radius:var(--admin-radius-sm);border:1px solid var(--admin-border);background:var(--admin-card-bg);color:var(--admin-text-muted);cursor:pointer;transition:all .2s}
-.online-update-section .ou-refresh:hover{border-color:var(--admin-primary);color:var(--admin-primary)}
-.online-update-section .ou-refresh:disabled{opacity:.6;cursor:not-allowed}
-.online-update-section .ou-body{padding:16px 18px}
-.ou-status-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:14px}
-.ou-status-item{display:flex;flex-direction:column;gap:2px}
-.ou-status-item .label{font-size:0.76rem;color:var(--admin-text-muted)}
-.ou-status-item .value{font-size:1rem;font-weight:600;color:var(--admin-text);font-family:"SF Mono",Consolas,Monaco,Menlo,"Courier New",monospace}
-.ou-status-badge{margin-left:auto;padding:6px 14px;border-radius:999px;font-size:0.82rem;font-weight:600}
-.ou-badge-update{background:rgba(245,158,11,0.12);color:#d9a441;border:1px solid rgba(245,158,11,0.3)}
-.ou-badge-latest{background:rgba(34,197,94,0.12);color:#22c55e;border:1px solid rgba(34,197,94,0.3)}
-.ou-badge-error{background:rgba(239,68,68,0.12);color:#ef4444;border:1px solid rgba(239,68,68,0.3)}
-.ou-btn-update{margin-left:8px;padding:6px 18px;font-size:0.84rem;font-weight:600;border-radius:var(--admin-radius-sm);border:none;background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;gap:6px}
-.ou-btn-update:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(59,130,246,0.35)}
-.ou-btn-update:disabled{opacity:.6;cursor:not-allowed;transform:none}
-.bg-purple{background:#8b5cf6!important;color:#fff!important}
-.ou-changelog-list{list-style:none;padding:0;margin:0}
-.ou-changelog-list li{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px dashed var(--admin-border);font-size:0.88rem}
-.ou-changelog-list li:last-child{border-bottom:none}
-.ou-ver-card{margin-bottom:14px;border:1px solid var(--admin-border);border-radius:var(--admin-radius-sm);overflow:hidden;background:var(--admin-card-bg)}
-.ou-ver-card .ou-ver-head{display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(59,130,246,0.04);border-bottom:1px solid var(--admin-border)}
-.ou-ver-card .ou-ver-num{font-size:0.95rem;font-weight:700;color:var(--admin-text);font-family:"SF Mono",Consolas,Monaco,Menlo,"Courier New",monospace}
-.ou-ver-card .ou-ver-date{font-size:0.8rem;color:var(--admin-text-muted)}
-.ou-ver-card .ou-ver-body{padding:10px 14px}
-.ou-changelog-list .ou-item-badge{flex-shrink:0;font-size:0.72rem;font-weight:600;padding:3px 8px;border-radius:6px;color:#fff;white-space:nowrap}
-.ou-changelog-list .ou-item-desc{color:var(--admin-text);line-height:1.5}
-.ou-info-line{font-size:0.82rem;color:var(--admin-text-muted);margin-top:10px;padding-top:10px;border-top:1px solid var(--admin-border)}
-.ou-info-line code{background:rgba(59,130,246,0.08);padding:1px 6px;border-radius:4px;color:var(--admin-primary);font-size:0.8rem}
-.ou-version-compare{display:flex;align-items:center;gap:8px;font-size:0.86rem;color:var(--admin-text-muted)}
-.ou-version-compare .arrow{color:var(--admin-primary);font-weight:700}
-.ou-empty{text-align:center;padding:20px;color:var(--admin-text-muted);font-size:0.88rem}
-</style>
+<style>body{overflow:auto}</style>
 </head>
 <body>
 <div class="admin-content">
@@ -613,7 +575,7 @@ function doUpdate() {
             + '3. 全量备份当前文件 → backup/bf.zip<br>'
             + '4. 解压覆盖<br>'
             + '5. 被动识别新版本号<br><br>'
-            + '<span style="color:#ef4444;font-size:0.84rem">更新期间请勿关闭页面，更新完成后页面将自动刷新</span>'
+            + '<span style="color:var(--admin-danger);font-size:0.84rem">更新期间请勿关闭页面，更新完成后页面将自动刷新</span>'
             + '</div>',
         icon: 'warning',
         showCancelButton: true,
@@ -655,7 +617,7 @@ function doUpdate() {
         .then(function(res) {
             if(res.code === 0 && res.data && res.data.success) {
                 var stepsHtml = res.data.steps.map(function(s) {
-                    return '<div style="color:#22c55e"><i class="mdi mdi-check-circle"></i> ' + escapeHtml(s) + '</div>';
+                    return '<div style="color:var(--admin-success)"><i class="mdi mdi-check-circle"></i> ' + escapeHtml(s) + '</div>';
                 }).join('');
                 Swal.fire({
                     title: '升级成功',

@@ -336,16 +336,7 @@ if(isset($_POST['action'])) {
 <link rel="stylesheet" href="style/css/bootstrap.min.css">
 <link rel="stylesheet" href="style/css/materialdesignicons.min.css">
 <link rel="stylesheet" href="style/css/admin.css">
-<style>html,body{height:100%;margin:0}body{overflow:auto}.admin-content{padding:16px 20px!important}
-.detail-grid{display:flex;flex-direction:column}
-.detail-row{display:flex;align-items:flex-start;padding:10px 0;border-bottom:1px solid #f1f5f9}
-.detail-row:last-child{border-bottom:none}
-.detail-label{width:110px;flex-shrink:0;font-size:13px;color:#64748b;font-weight:500}
-.detail-value{flex:1;font-size:14px;color:#1e293b;word-break:break-all}
-.batch-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.batch-info{font-size:13px;color:#1e293b;background:#eff6ff;padding:4px 10px;border-radius:6px}
-.card-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-</style>
+<style>body{overflow:auto}</style>
 <link rel="stylesheet" href="style/css/sweetalert2.min.css">
 </head>
 <body>
@@ -509,7 +500,7 @@ if(isset($_POST['action'])) {
           <div class="d-flex align-items-center justify-content-between mb-2">
             <div style="font-size:14px;font-weight:600;color:#1e293b;">
               <i class="mdi mdi-check-circle text-success"></i>
-              生成成功：<span id="genBatchLabel" class="text-muted"></span>（共 <span id="genCountLabel" style="color:#3b82f6;font-weight:700;">0</span> 个）
+              生成成功：<span id="genBatchLabel" class="text-muted"></span>（共 <span id="genCountLabel" style="color:var(--admin-primary);font-weight:700;">0</span> 个）
             </div>
             <div>
               <button type="button" class="btn btn-outline-primary btn-sm" onclick="copyGeneratedCodes()"><i class="mdi mdi-content-copy"></i> 复制全部</button>
@@ -662,9 +653,9 @@ function renderTable(data){
     $.each(data.codes, function(i, c){
         var statusBadge = '';
         if(c.status === 'used'){
-            statusBadge = '<span class="badge-status" style="background:#fff7ed;color:#c2410c;"><i class="mdi mdi-check-decagram"></i> 已使用</span>';
+            statusBadge = '<span class="badge-status" style="background:var(--admin-warning-soft);color:var(--admin-warning);"><i class="mdi mdi-check-decagram"></i> 已使用</span>';
         } else if(c.status === 'expired'){
-            statusBadge = '<span class="badge-status" style="background:#fef2f2;color:#b91c1c;"><i class="mdi mdi-clock-alert-outline"></i> 已过期</span>';
+            statusBadge = '<span class="badge-status" style="background:var(--admin-danger-soft);color:var(--admin-danger);"><i class="mdi mdi-clock-alert-outline"></i> 已过期</span>';
         } else {
             statusBadge = '<span class="badge-status badge-status-on"><i class="mdi mdi-ticket-confirmation-outline"></i> 未使用</span>';
         }
@@ -695,7 +686,7 @@ function renderTable(data){
         var row = '<tr>' +
             '<td>'+checkCell+'</td>' +
             '<td>'+c.id+'</td>' +
-            '<td><code style="font-size:13px;color:#4338ca;">'+escHtml(c.code)+'</code>'+expiresAt+'</td>' +
+            '<td><code style="font-size:13px;color:var(--admin-primary);">'+escHtml(c.code)+'</code>'+expiresAt+'</td>' +
             '<td>'+escHtml(c.package_name)+'</td>' +
             '<td>'+daysCell+'</td>' +
             '<td>'+statusBadge+'</td>' +
@@ -1073,15 +1064,15 @@ function renderDetail(d){
 
     var statusBadge = '';
     if(d.status === 'used'){
-        statusBadge = '<span class="badge-status" style="background:#fff7ed;color:#c2410c;"><i class="mdi mdi-check-decagram"></i> 已使用</span>';
+        statusBadge = '<span class="badge-status" style="background:var(--admin-warning-soft);color:var(--admin-warning);"><i class="mdi mdi-check-decagram"></i> 已使用</span>';
     } else if(d.status === 'expired'){
-        statusBadge = '<span class="badge-status" style="background:#fef2f2;color:#b91c1c;"><i class="mdi mdi-clock-alert-outline"></i> 已过期</span>';
+        statusBadge = '<span class="badge-status" style="background:var(--admin-danger-soft);color:var(--admin-danger);"><i class="mdi mdi-clock-alert-outline"></i> 已过期</span>';
     } else {
         statusBadge = '<span class="badge-status badge-status-on"><i class="mdi mdi-ticket-confirmation-outline"></i> 未使用</span>';
     }
 
     var rows = [
-        ['兑换码',      '<code style="color:#4338ca;font-size:14px;">'+escHtml(d.code)+'</code>'],
+        ['兑换码',      '<code style="color:var(--admin-primary);font-size:13px;">'+escHtml(d.code)+'</code>'],
         ['状态',        statusBadge],
         ['目标套餐',    escHtml(d.package_name) + (d.package_level !== null ? '（'+pkgLevel+'）' : '')],
         ['套餐存储',    pkgStorage],

@@ -506,11 +506,7 @@ if(isset($_POST['action'])) {
 <link rel="stylesheet" href="style/css/bootstrap.min.css">
 <link rel="stylesheet" href="style/css/materialdesignicons.min.css">
 <link rel="stylesheet" href="style/css/admin.css">
-<style>html,body{height:100%;margin:0}body{overflow:auto}.admin-content{padding:16px 20px!important}
-.batch-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.batch-info{font-size:13px;color:#1e293b;background:#eff6ff;padding:4px 10px;border-radius:6px}
-.card-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-</style>
+<style>body{overflow:auto}</style>
 <link rel="stylesheet" href="style/css/sweetalert2.min.css">
 </head>
 <body>
@@ -865,8 +861,8 @@ function renderTable(data){
     }
     $.each(data.users, function(i, u){
         var roleBadge = u.role === 'super_admin'
-            ? '<span class="badge-status" style="background:#ede9fe;color:#5b21b6;"><i class="mdi mdi-shield-account"></i> 超级管理员</span>'
-            : '<span class="badge-status" style="background:#e0f2fe;color:#075985;"><i class="mdi mdi-account"></i> 普通用户</span>';
+            ? '<span class="badge-status" style="background:var(--admin-primary-soft);color:var(--admin-primary);"><i class="mdi mdi-shield-account"></i> 超级管理员</span>'
+            : '<span class="badge-status" style="background:var(--admin-hover);color:var(--admin-text-secondary);"><i class="mdi mdi-account"></i> 普通用户</span>';
         var statusBadge = u.status === 1
             ? '<span class="badge-status badge-status-on"><i class="mdi mdi-check"></i> 启用</span>'
             : '<span class="badge-status badge-status-off"><i class="mdi mdi-close"></i> 禁用</span>';

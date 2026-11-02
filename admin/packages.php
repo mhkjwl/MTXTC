@@ -207,7 +207,7 @@ if(isset($_POST['action'])) {
 <link rel="stylesheet" href="style/css/bootstrap.min.css">
 <link rel="stylesheet" href="style/css/materialdesignicons.min.css">
 <link rel="stylesheet" href="style/css/admin.css">
-<style>html,body{height:100%;margin:0}body{overflow:auto}.admin-content{padding:16px 20px!important}</style>
+<style>body{overflow:auto}</style>
 <link rel="stylesheet" href="style/css/sweetalert2.min.css">
 </head>
 <body>
@@ -423,8 +423,8 @@ function renderTable(data){
     }
     $.each(data.packages, function(i, p){
         var levelBadge = p.level > 0
-            ? '<span class="badge-status" style="background:#fef3c7;color:#92400e;"><i class="mdi mdi-crown-outline"></i> LV' + p.level + '</span>'
-            : '<span class="badge-status" style="background:#e0f2fe;color:#075985;"><i class="mdi mdi-account-outline"></i> 免费版</span>';
+            ? '<span class="badge-status" style="background:var(--admin-warning-soft);color:var(--admin-warning);"><i class="mdi mdi-crown-outline"></i> LV' + p.level + '</span>'
+            : '<span class="badge-status" style="background:var(--admin-hover);color:var(--admin-text-secondary);"><i class="mdi mdi-account-outline"></i> 免费版</span>';
         var defaultBadge = p.is_default == 1
             ? '<span class="badge-status badge-status-on"><i class="mdi mdi-star"></i> 默认</span>'
             : '<span class="text-muted">—</span>';

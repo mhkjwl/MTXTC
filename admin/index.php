@@ -38,8 +38,8 @@ if(!isset($islogin) || $islogin!=1) exit("<script>location.href='login.php';</sc
   <aside class="admin-sidebar" id="adminSidebar">
     <div class="admin-sidebar-brand">
       <a href="index.php">
-        <img src="style/images/logo-sidebar.png" alt="后台管理" />
-        <span class="brand-text">后台管理</span>
+        <span class="brand-mark" aria-hidden="true">M</span>
+        <span class="brand-text">MTXTC<span class="brand-sub">聚合图床 · 控制台</span></span>
       </a>
     </div>
     <nav class="admin-sidebar-nav">
@@ -149,7 +149,7 @@ if(!isset($islogin) || $islogin!=1) exit("<script>location.href='login.php';</sc
         </a>
         <div class="dropdown">
           <a href="javascript:void(0)" data-bs-toggle="dropdown" class="admin-user-dropdown">
-            <img class="avatar" src="style/images/avatar.jpg" alt="头像" />
+            <span class="avatar-text"><?php echo htmlspecialchars(mb_substr($conf['admin_user'] ?? 'A', 0, 1), ENT_QUOTES, 'UTF-8');?></span>
             <span class="user-name"><?php echo htmlspecialchars($conf['admin_user'] ?? '', ENT_QUOTES, 'UTF-8');?></span>
             <i class="mdi mdi-chevron-down" style="font-size:16px;color:#94a3b8;"></i>
           </a>

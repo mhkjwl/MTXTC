@@ -412,37 +412,7 @@ foreach($apiInterfaces as $key=>$cfg) {
 <link rel="stylesheet" href="style/css/bootstrap.min.css">
 <link rel="stylesheet" href="style/css/materialdesignicons.min.css">
 <link rel="stylesheet" href="style/css/admin.css">
-<style>
-html,body{height:100%;margin:0}body{overflow:auto}.admin-content{padding:16px 20px!important}
-
-/* 顶部工具条 */
-.api-toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
-.api-toolbar .search-input-wrap{position:relative;flex:1;min-width:220px;max-width:340px}
-.api-toolbar .search-input-wrap .mdi{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:20px;pointer-events:none}
-.api-toolbar .search-input-wrap input{padding-left:40px}
-.api-toolbar .batch-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.api-toolbar .api-stat{font-size:13px;color:var(--admin-text-muted);white-space:nowrap}
-.api-toolbar .api-stat strong{color:var(--admin-primary);font-size:15px}
-
-/* 表格 */
-.table td{vertical-align:middle}
-.api-name-cell{display:flex;align-items:center;gap:10px}
-.api-name-cell .api-icon{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#eff6ff;color:#2563eb;flex-shrink:0}
-.api-name-cell .api-icon i{font-size:20px}
-.api-name-cell .api-name-text strong{font-size:14px;color:var(--admin-text);display:block;line-height:1.3}
-.api-name-cell .api-name-text small{font-size:12px;color:#94a3b8}
-.api-key-code{font-family:monospace;font-size:11px;background:#f1f5f9;padding:1px 5px;border-radius:3px;color:#64748b}
-
-/* 默认接口选择器 */
-.default-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:linear-gradient(135deg,#f0f7ff 0%,#e8f4fd 100%);border:1px solid #bfdbfe;border-radius:12px;padding:14px 18px;margin-bottom:16px}
-.default-bar .default-label{font-weight:600;color:#1e40af;display:flex;align-items:center;gap:6px}
-.default-bar select{max-width:280px}
-
-/* 编辑弹窗内表单 */
-.edit-form .form-label{font-size:13px}
-.edit-form .alert{font-size:13px;margin-bottom:14px}
-.api-required{color:#ef4444}
-</style>
+<style>body{overflow:auto}</style>
 <link rel="stylesheet" href="style/css/sweetalert2.min.css">
 </head>
 <body>
@@ -599,7 +569,7 @@ function renderTable(){
             : '<span class="badge-status badge-status-off"><i class="mdi mdi-close-circle"></i> 禁用</span>';
         // 默认徽章
         var defaultBadge = isDefault
-            ? '<span class="badge-status" style="background:#fef3c7;color:#92400e;"><i class="mdi mdi-star"></i> 默认</span>'
+            ? '<span class="badge-status" style="background:var(--admin-warning-soft);color:var(--admin-warning);"><i class="mdi mdi-star"></i> 默认</span>'
             : '<span class="text-muted">—</span>';
 
         // 操作按钮
